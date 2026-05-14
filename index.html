@@ -240,6 +240,7 @@ function render(){
           <input id="inp_loginPass" type="password" value="${form.loginPass||''}" oninput="setVal('loginPass',this.value)" placeholder="รหัสผ่าน" onkeypress="if(event.key==='Enter')login()"></div>
         <button class="btn btn-navy" onclick="login()">เข้าสู่ระบบ</button>
         <div style="text-align:center;margin-top:16px;font-size:13px">ยังไม่มีบัญชี? <span class="link" onclick="go('register')">สมัครสมาชิก</span></div>
+        <div style="text-align:center;margin-top:8px"><span class="link" style="font-size:12px;color:var(--grey)" onclick="go('forgot')">🔑 ลืมรหัสผ่าน?</span></div>
       </div>
     </div>`;
     return;
@@ -423,6 +424,38 @@ function render(){
     return;
   }
 
+  // ===== FORGOT PASSWORD =====
+  if(page==='forgot'){
+    app.innerHTML=`
+    <div class="header">
+      <div class="hrow"><img src="${LOGO}"><div><div class="nm">🔑 ลืมรหัสผ่าน</div><div class="sl">รีเซ็ตด้วยเบอร์โทร</div></div></div>
+    </div>
+    <div class="wrap">
+      <div class="card">
+        <div style="text-align:center;margin-bottom:20px">
+          <div style="font-size:32px">🔓</div>
+          <div style="font-size:14px;color:var(--grey);margin-top:4px">กรอกเบอร์โทรที่ใช้สมัคร ระบบจะให้ตั้งรหัสใหม่</div>
+        </div>
+        <div class="field"><label>เบอร์โทรศัพท์ที่ใช้สมัคร <span class="req">*</span></label>
+          <input id="inp_forgotPhone" type="tel" maxlength="10" placeholder="08X-XXX-XXXX" oninput="this.value=this.value.replace(/\\D/g,'').slice(0,10)"></div>
+        <div id="forgotStep2" style="display:none">
+          <div style="background:#E8F5E9;border-radius:8px;padding:10px;margin-bottom:12px;font-size:13px;color:var(--green)">✅ พบบัญชี: <b id="forgotNickname"></b></div>
+          <div class="field"><label>ตั้งรหัสผ่านใหม่ <span class="req">*</span></label>
+            <input id="inp_forgotNewPass" type="password" placeholder="รหัสใหม่ (อย่างน้อย 4 ตัว)"></div>
+          <div class="field"><label>ยืนยันรหัสผ่านใหม่ <span class="req">*</span></label>
+            <input id="inp_forgotConfirm" type="password" placeholder="ใส่รหัสใหม่อีกครั้ง"></div>
+          <button class="btn btn-green" style="width:100%" onclick="resetForgotPass()">✅ ตั้งรหัสผ่านใหม่</button>
+        </div>
+        <div id="forgotStep1">
+          <button class="btn btn-navy" style="width:100%" onclick="checkForgotPhone()">ตรวจสอบเบอร์โทร →</button>
+        </div>
+        <button class="btn btn-outline" onclick="go('login')" style="margin-top:8px;width:100%">← กลับเข้าสู่ระบบ</button>
+        <div style="text-align:center;margin-top:12px;font-size:11px;color:var(--grey)">หากไม่สามารถรีเซ็ตได้ กรุณาติดต่อ<br>LINE: @jaifusolutions</div>
+      </div>
+    </div>`;
+    return;
+  }
+
   // ===== CHANGE PASSWORD =====
   if(page==='changepass'){
     app.innerHTML=`
@@ -492,6 +525,67 @@ async function changePassword(){
     alert('✅ เปลี่ยนรหัสผ่านเรียบร้อย (offline mode)');
   }
   page='service';render();
+}
+
+// ===== FORGOT PASSWORD =====
+async function checkForgotPhone(){
+  var phone=document.getElementById('inp_forgotPhone');
+  if(!phone)return;
+  var ph=phone.value.trim();
+  if(!ph||ph.length<9){alert('กรุณากรอกเบอร์โทร');return}
+  
+  if(API_URL){
+    try{
+      var res=await fetch(API_URL+'?action=checkUser&phone='+encodeURIComponent(ph));
+      var data=await res.json();
+      if(data.exists){
+        document.getElementById('forgotNickname').textContent=data.nickname||ph;
+        document.getElementById('forgotStep1').style.display='none';
+        document.getElementById('forgotStep2').style.display='block';
+        form._forgotPhone=ph;
+      }else{
+        alert('❌ ไม่พบเบอร์นี้ในระบบ กรุณาสมัครสมาชิกใหม่');
+      }
+    }catch(e){alert('❌ ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้')}
+  }else{
+    var saved=localStorage.getItem('jaifu_user');
+    if(saved){
+      try{
+        var u=JSON.parse(saved);
+        if(u.phone===ph){
+          document.getElementById('forgotNickname').textContent=u.nickname||ph;
+          document.getElementById('forgotStep1').style.display='none';
+          document.getElementById('forgotStep2').style.display='block';
+          form._forgotPhone=ph;
+        }else{alert('❌ ไม่พบเบอร์นี้')}
+      }catch(e){alert('❌ ไม่พบข้อมูล')}
+    }else{alert('❌ ไม่พบบัญชี')}
+  }
+}
+
+async function resetForgotPass(){
+  var newP=document.getElementById('inp_forgotNewPass');
+  var confirm=document.getElementById('inp_forgotConfirm');
+  if(!newP||!confirm)return;
+  var np=newP.value,cp=confirm.value;
+  if(np.length<4){alert('❌ รหัสใหม่ต้องมีอย่างน้อย 4 ตัว');return}
+  if(np!==cp){alert('❌ รหัสผ่านไม่ตรงกัน');return}
+  
+  if(API_URL){
+    try{
+      var res=await fetch(API_URL,{method:'POST',headers:{'Content-Type':'text/plain'},
+        body:JSON.stringify({action:'resetPassword',phone:form._forgotPhone,newPassword:np})});
+      var data=await res.json();
+      if(data.success){alert('✅ ตั้งรหัสผ่านใหม่เรียบร้อย! กลับไปเข้าสู่ระบบ');page='login';render();}
+      else{alert('❌ '+(data.error||'ไม่สามารถรีเซ็ตได้'))}
+    }catch(e){alert('❌ ไม่สามารถเชื่อมต่อได้')}
+  }else{
+    var saved=localStorage.getItem('jaifu_user');
+    if(saved){
+      try{var u=JSON.parse(saved);u.password=np;localStorage.setItem('jaifu_user',JSON.stringify(u));
+        alert('✅ ตั้งรหัสใหม่เรียบร้อย!');page='login';render();}catch(e){}
+    }
+  }
 }
 
 initLiff();
