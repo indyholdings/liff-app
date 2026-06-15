@@ -265,18 +265,23 @@ header:not(.scrolled) .nav-login{box-shadow:0 4px 14px rgba(13,27,42,.18)}
 .section-title em{font-family:'Fraunces',serif;font-style:italic;color:var(--gold);font-weight:600}
 .section-sub{color:var(--text-soft);font-size:15px;margin-top:10px}
 .services-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:26px}
-.service-card{background:var(--white);padding:38px 30px;border-radius:26px;box-shadow:var(--shadow);
+.service-card{background:var(--white);padding:40px 30px;border-radius:26px;box-shadow:var(--shadow);text-align:center;
   border:1px solid rgba(201,171,86,.16);position:relative;overflow:hidden;transition:transform .35s,box-shadow .35s}
 .service-card::before{content:'';position:absolute;top:0;left:0;width:100%;height:5px;background:linear-gradient(90deg,var(--gold),var(--gold-light));transform:scaleX(0);transform-origin:left;transition:.35s}
 .service-card:hover{transform:translateY(-10px);box-shadow:var(--shadow-gold)}
 .service-card:hover::before{transform:scaleX(1)}
+.service-card.featured{border-color:rgba(201,171,86,.45);box-shadow:0 14px 44px rgba(201,171,86,.22)}
+.service-card.featured::before{transform:scaleX(1)}
+.svc-badge{position:absolute;top:16px;right:16px;background:linear-gradient(135deg,var(--gold),var(--gold-light));color:var(--navy-deep);font-size:10.5px;font-weight:700;padding:4px 11px;border-radius:12px;letter-spacing:.3px}
 .service-num{font-family:'Fraunces',serif;font-size:14px;color:var(--gold);font-weight:600;letter-spacing:1px}
-.service-icon{width:78px;height:78px;margin:14px 0 18px;border-radius:22px;background:linear-gradient(135deg,var(--navy-deep),var(--navy-soft));
-  display:flex;align-items:center;justify-content:center;font-size:36px;box-shadow:0 10px 24px rgba(13,27,42,.2)}
+.service-icon{width:82px;height:82px;margin:14px auto 18px;border-radius:24px;background:linear-gradient(135deg,var(--navy-deep),var(--navy-soft));
+  display:flex;align-items:center;justify-content:center;box-shadow:0 10px 24px rgba(13,27,42,.22)}
+.service-icon svg{width:44px;height:44px}
 .service-card h3{color:var(--navy-deep);margin-bottom:10px;font-size:21px;font-weight:600}
 .service-card p{font-size:14.5px;color:var(--text-soft);line-height:1.75}
 .service-tag{display:inline-flex;align-items:center;gap:6px;margin-top:18px;font-size:12px;font-weight:600;padding:6px 15px;border-radius:14px}
 .tag-free{background:#e7f6ee;color:#0f8a4d}.tag-verify{background:#fbf1dc;color:#a8862f}
+.tag-warm{background:#fdeee8;color:#c2643a}
 
 /* ===== PRODUCTS ===== */
 .products{background:var(--navy-deep);padding:90px 24px;position:relative;overflow:hidden}
@@ -325,7 +330,8 @@ header:not(.scrolled) .nav-login{box-shadow:0 4px 14px rgba(13,27,42,.18)}
 .why-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:24px}
 .why-card{text-align:center;padding:34px 22px;background:var(--white);border-radius:24px;box-shadow:var(--shadow);border:1px solid rgba(201,171,86,.14);transition:transform .3s}
 .why-card:hover{transform:translateY(-6px)}
-.why-icon{width:64px;height:64px;margin:0 auto 14px;border-radius:18px;display:flex;align-items:center;justify-content:center;font-size:30px;background:linear-gradient(135deg,var(--cream),var(--cream-2));border:1px solid rgba(201,171,86,.25)}
+.why-icon{width:64px;height:64px;margin:0 auto 14px;border-radius:18px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--cream),var(--cream-2));border:1px solid rgba(201,171,86,.25)}
+.why-icon svg{width:34px;height:34px}
 .why-card h4{color:var(--navy-deep);font-size:18px;margin-bottom:7px;font-weight:600}
 .why-card p{font-size:13.5px;color:var(--text-soft)}
 
@@ -567,9 +573,37 @@ footer{background:#0a141f;color:#fff;padding:60px 24px 100px;text-align:center}
     <p class="section-sub">เลือกสิ่งที่ใช่ เริ่มต้นง่ายๆ ไม่ยุ่งยาก</p>
   </div>
   <div class="services-grid">
-    <div class="service-card reveal"><div class="service-num">01</div><div class="service-icon">🛍️</div><h3>ซื้อสินค้าพรีเมียม</h3><p>คัดเกรดคุณภาพเยี่ยม ตรวจเช็ค 24 จุด พร้อมประกันอุ่นใจ เลือกชมได้เลยไม่ต้องสมัครสมาชิก</p><span class="service-tag tag-free">✓ ดูได้เลย ไม่ต้องใช้บัตร ปชช.</span></div>
-    <div class="service-card reveal"><div class="service-num">02</div><div class="service-icon">💳</div><h3>ผ่อนชำระสบายๆ</h3><p>อนุมัติง่าย เป็นธรรม ยืนยันตัวตนปลอดภัย ช่วยให้คุณเป็นเจ้าของได้โดยไม่ต้องใช้เงินก้อน</p><span class="service-tag tag-verify">⬡ ยืนยันตัวตน</span></div>
-    <div class="service-card reveal"><div class="service-num">03</div><div class="service-icon">🤝</div><h3>รับซื้อ-ขายฝาก</h3><p>ประเมินไว ให้ราคายุติธรรม ปลอดภัย 100% เปลี่ยนทรัพย์สินของคุณให้เป็นโอกาสทางการเงิน</p><span class="service-tag tag-verify">⬡ ยืนยันตัวตน</span></div>
+    <div class="service-card reveal"><div class="service-num">01</div>
+      <div class="service-icon"><svg viewBox="0 0 48 48" fill="none">
+        <path d="M14 16h20l-2 22a2 2 0 0 1-2 1.8H18a2 2 0 0 1-2-1.8L14 16Z" fill="#C9AB56"/>
+        <path d="M14 16h20l-.5 5H14.5L14 16Z" fill="#E8D5A0"/>
+        <path d="M18 16v-2a6 6 0 0 1 12 0v2" stroke="#E8D5A0" stroke-width="2.5" stroke-linecap="round"/>
+        <circle cx="20" cy="24" r="1.6" fill="#0D1B2A"/><circle cx="28" cy="24" r="1.6" fill="#0D1B2A"/>
+      </svg></div>
+      <h3>ซื้อสินค้าพรีเมียม</h3><p>คัดเกรดคุณภาพเยี่ยม ตรวจเช็ค 24 จุด พร้อมประกันอุ่นใจ เลือกชมได้เลยไม่ต้องสมัครสมาชิก</p>
+      <span class="service-tag tag-free">✓ ดูได้เลย ไม่ต้องใช้บัตร ปชช.</span></div>
+
+    <div class="service-card featured reveal"><span class="svc-badge">★ ยอดนิยม</span><div class="service-num">02</div>
+      <div class="service-icon"><svg viewBox="0 0 48 48" fill="none">
+        <rect x="8" y="14" width="32" height="22" rx="4" fill="#C9AB56"/>
+        <rect x="8" y="19" width="32" height="5" fill="#0D1B2A"/>
+        <rect x="12" y="29" width="10" height="3" rx="1.5" fill="#E8D5A0"/>
+        <circle cx="31" cy="30" r="4" fill="#E8D5A0" opacity="0.55"/><circle cx="35" cy="30" r="4" fill="#E8D5A0"/>
+      </svg></div>
+      <h3>ผ่อนชำระสบายๆ</h3><p>ของที่อยากได้ ไม่ต้องรอเก็บเงินก้อน ผ่อนสบายเป็นกันเอง อนุมัติเป็นธรรม ยืนยันตัวตนปลอดภัย เราเข้าใจทุกจังหวะชีวิตของคุณ</p>
+      <span class="service-tag tag-warm">♡ เริ่มเป็นเจ้าของได้เลยวันนี้</span></div>
+
+    <div class="service-card reveal"><div class="service-num">03</div>
+      <div class="service-icon"><svg viewBox="0 0 48 48" fill="none">
+        <rect x="9" y="10" width="16" height="28" rx="3" fill="#C9AB56"/>
+        <rect x="11.5" y="13" width="11" height="18" rx="1" fill="#0D1B2A"/>
+        <circle cx="17" cy="34.5" r="1.5" fill="#0D1B2A"/>
+        <circle cx="34" cy="24" r="8" fill="#E8D5A0"/>
+        <text x="34" y="28" font-size="10" font-weight="bold" fill="#0D1B2A" text-anchor="middle" font-family="Arial">฿</text>
+        <path d="M27 16l3-2.5M27 32l3 2.5" stroke="#C9AB56" stroke-width="2" stroke-linecap="round"/>
+      </svg></div>
+      <h3>รับซื้อ-ขายฝาก</h3><p>ประเมินไว ให้ราคายุติธรรม ไม่กดราคา ปลอดภัย 100% เปลี่ยนทรัพย์สินของคุณให้เป็นโอกาสทางการเงิน</p>
+      <span class="service-tag tag-verify">⬡ ยืนยันตัวตน</span></div>
   </div>
 </section>
 
@@ -596,10 +630,30 @@ footer{background:#0a141f;color:#fff;padding:60px 24px 100px;text-align:center}
     <h2 class="section-title">ทำไมต้อง <em>ใจฟู</em></h2>
   </div>
   <div class="why-grid">
-    <div class="why-card reveal"><div class="why-icon">✅</div><h4>ของแท้ 100%</h4><p>ตรวจสอบทุกเครื่อง การันตีของแท้ ไม่ใช่ของปลอม</p></div>
-    <div class="why-card reveal"><div class="why-icon">🛡️</div><h4>ประกันอุ่นใจ</h4><p>มีประกันหลังการขาย ดูแลคุณตลอดการใช้งาน</p></div>
-    <div class="why-card reveal"><div class="why-icon">💎</div><h4>คัดเกรดนางฟ้า</h4><p>สภาพสวยคัดพิเศษ ตรวจเช็ค 24 จุดก่อนส่งมอบ</p></div>
-    <div class="why-card reveal"><div class="why-icon">⚡</div><h4>ประเมินราคาไว</h4><p>รู้ราคาภายใน 5 นาที ยุติธรรม โปร่งใส ไม่กดราคา</p></div>
+    <div class="why-card reveal"><div class="why-icon"><svg viewBox="0 0 40 40" fill="none">
+      <path d="M20 4l3.8 2.3 4.4-.5 1.6 4.1 4.1 1.6-.5 4.4L40 20l-2.3 3.8.5 4.4-4.1 1.6-1.6 4.1-4.4-.5L20 36l-3.8-2.3-4.4.5-1.6-4.1L6.1 28.4l.5-4.4L4 20l2.3-3.8-.5-4.4 4.1-1.6L11.5 6.1l4.4.5L20 4Z" fill="#C9AB56"/>
+      <path d="M14 20l4 4 8-8" stroke="#0D1B2A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg></div><h4>ของแท้ 100%</h4><p>ตรวจสอบทุกเครื่อง การันตีของแท้ ไม่ใช่ของปลอม</p></div>
+
+    <div class="why-card reveal"><div class="why-icon"><svg viewBox="0 0 40 40" fill="none">
+      <path d="M20 4l13 4v9c0 8-5.5 14.5-13 17-7.5-2.5-13-9-13-17V8l13-4Z" fill="#C9AB56"/>
+      <path d="M20 8l9 2.8v6.2c0 5.6-3.8 10.2-9 12-5.2-1.8-9-6.4-9-12V10.8L20 8Z" fill="#E8D5A0"/>
+      <path d="M15 20l3.5 3.5L26 16" stroke="#0D1B2A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg></div><h4>ประกันอุ่นใจ</h4><p>มีประกันหลังการขาย ดูแลคุณตลอดการใช้งาน</p></div>
+
+    <div class="why-card reveal"><div class="why-icon"><svg viewBox="0 0 40 40" fill="none">
+      <path d="M12 6h16l6 8-14 18L6 14l6-8Z" fill="#C9AB56"/>
+      <path d="M12 6h16l6 8H6l6-8Z" fill="#E8D5A0"/>
+      <path d="M6 14l14 18 14-18" stroke="#0D1B2A" stroke-width="1.2" opacity="0.3" fill="none"/>
+      <path d="M16 6l4 8 4-8M6 14h28" stroke="#0D1B2A" stroke-width="1.2" opacity="0.3"/>
+    </svg></div><h4>คัดเกรดนางฟ้า</h4><p>คัดพิเศษ ไม่ย้อมแมว เพราะความโปร่งใสสำคัญที่สุดสำหรับคุณ ตรวจเช็ค 24 จุดก่อนส่งมอบ</p></div>
+
+    <div class="why-card reveal"><div class="why-icon"><svg viewBox="0 0 40 40" fill="none">
+      <circle cx="20" cy="21" r="13" fill="#C9AB56"/>
+      <circle cx="20" cy="21" r="10" fill="#E8D5A0"/>
+      <path d="M20 15v6l4 3" stroke="#0D1B2A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M15 5h10M20 5v3" stroke="#C9AB56" stroke-width="2.5" stroke-linecap="round"/>
+    </svg></div><h4>อนุมัติไวใน 12 ชม.</h4><p>รู้ผลไว ยุติธรรม โปร่งใส ไม่กดราคา ให้ราคาสูง</p></div>
   </div>
 </section>
 
@@ -633,8 +687,8 @@ footer{background:#0a141f;color:#fff;padding:60px 24px 100px;text-align:center}
 </div>
 
 <div class="live-feed" id="liveFeed">
-  <div class="lf-ava"><span id="lfEmoji">🐰</span><span class="on"></span></div>
-  <div class="lf-body"><b id="lfName">คุณ k•••</b> <span id="lfAction">เพิ่งขาย</span> <span id="lfItem">iPhone 17 Pro 1TB</span><br><span class="amt" id="lfAmt">฿37,000</span> · <span class="t">เมื่อสักครู่</span></div>
+  <div class="lf-ava"><span id="lfEmoji">🎉</span><span class="on"></span></div>
+  <div class="lf-body" id="lfBody"><b>มีคนเพิ่งซื้อ</b> <span id="lfItem">iPhone 15 Pro Max</span><br><span class="t" id="lfTime">เมื่อสักครู่</span></div>
   <span class="lf-close" onclick="document.getElementById('liveFeed').classList.remove('show')">×</span>
 </div>
 
@@ -653,6 +707,24 @@ const products = [
 ];
 const fmt = n => '฿'+n.toLocaleString();
 const LINE = 'https://liff.line.me/2010034571-sTWhmIFr';
+const LINE_OA = '@jaifusolution';
+
+/* ===== Interest funnel (เก็บสถิติ view/click ต่อสินค้า) ===== */
+const _stats = {};
+function _statBump(name, key){
+  if(!_stats[name]) _stats[name] = {view:0, click:0};
+  _stats[name][key]++;
+}
+function interestClick(i){
+  const list = (renderProducts._current || products);
+  const p = list[i];
+  if(!p) return;
+  _statBump(p.name, 'click');
+  // ข้อความตั้งต้น: รุ่น + สเปคย่อ + ราคา
+  const msg = 'สนใจ ' + p.name + ' (' + p.desc + ') ราคา ' + fmt(p.price) + ' ขอรายละเอียดเพิ่มเติมครับ/ค่ะ';
+  const url = 'https://line.me/R/oaMessage/' + LINE_OA + '/?' + encodeURIComponent(msg);
+  window.open(url, '_blank');
+}
 
 function deviceSVG(){return `<div class="device sm"><div class="cam"></div><div class="shimmer"></div></div>`;}
 
@@ -660,6 +732,7 @@ function renderProducts(items){
   renderProducts._current = items;
   const grid = document.getElementById('product-grid');
   grid.innerHTML = items.map((p,i)=>{
+    _statBump(p.name, 'view');
     const pct = Math.round((1 - p.price/p.old)*100);
     return `<div class="product-card" style="animation-delay:${i*0.07}s">
       <div class="product-img">
@@ -671,7 +744,7 @@ function renderProducts(items){
         <div class="product-title">${p.name}</div>
         <div class="product-desc">${p.desc}</div>
         <div class="price-row"><span class="price">${fmt(p.price)}</span><strike>${fmt(p.old)}</strike><span class="save-pct">-${pct}%</span></div>
-        <a href="${LINE}" class="btn-line">💬 ทักไลน์ดูรูปจริง</a>
+        <a onclick="interestClick(${i})" class="btn-line" style="cursor:pointer">💬 สนใจ — ทักไลน์เลย</a>
       </div>
     </div>`;
   }).join('');
@@ -743,25 +816,61 @@ document.querySelectorAll('.cap').forEach(c=>c.addEventListener('click',()=>{
 const io = new IntersectionObserver(entries=>{entries.forEach(e=>{if(e.isIntersecting)e.target.classList.add('show')});},{threshold:0.12});
 document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
 
-/* LIVE FEED social proof */
-const feedData=[
-  {emoji:'🐰',name:'คุณ k•••',action:'เพิ่งขาย',item:'iPhone 17 Pro 1TB',amt:'฿37,000'},
-  {emoji:'🐱',name:'คุณ น•••',action:'เพิ่งซื้อ',item:'iPad Air M2',amt:'฿16,500'},
-  {emoji:'🐻',name:'คุณ ภ•••',action:'ผ่อน',item:'iPhone 15 Pro Max',amt:'฿28,900'},
-  {emoji:'🐼',name:'คุณ ส•••',action:'ขายฝาก',item:'MacBook Air M3',amt:'฿29,000'},
-  {emoji:'🦊',name:'คุณ พ•••',action:'เพิ่งซื้อ',item:'Apple Watch S9',amt:'฿9,900'}
-];
-let fi=0;const lf=document.getElementById('liveFeed');
+/* LIVE FEED — social proof จากข้อมูลจริง (ไม่ระบุตัวตน) + fallback ตัวเลขรวม */
+const TOTAL_DELIVERED = '300+';      // ตัวเลขรวมจริง (fallback)
+let feedData = [];                    // จะเติมจาก backend
+let feedReady = false;
+
+/* แปลงเวลาจริงเป็นข้อความ เช่น "2 ชม.ที่แล้ว" */
+function _timeAgo(iso){
+  if(!iso) return 'เมื่อเร็ว ๆ นี้';
+  const diff = (Date.now() - new Date(iso).getTime())/1000;
+  if(diff < 120) return 'เมื่อสักครู่';
+  if(diff < 3600) return Math.floor(diff/60)+' นาทีที่แล้ว';
+  if(diff < 86400) return Math.floor(diff/3600)+' ชม.ที่แล้ว';
+  return Math.floor(diff/86400)+' วันที่แล้ว';
+}
+
+/* ดึงข้อมูลจริงจาก backend (action=getLiveFeed) — ไม่ระบุตัวตน */
+async function loadLiveFeed(){
+  try{
+    const r = await _api('getLiveFeed', {});
+    if(r && r.ok && Array.isArray(r.items) && r.items.length){
+      // คาดหวัง: [{action:'ซื้อ', item:'iPhone 15 Pro Max', at:'2026-06-15T10:00:00Z'}]
+      feedData = r.items.filter(x=>x && x.item);
+    }
+  }catch(e){ /* เงียบ — ใช้ fallback */ }
+  feedReady = true;
+}
+
+let fi=0;
+const lf=document.getElementById('liveFeed');
 function showFeed(){
-  const d=feedData[fi%feedData.length];fi++;
-  document.getElementById('lfEmoji').textContent=d.emoji;
-  document.getElementById('lfName').textContent=d.name;
-  document.getElementById('lfAction').textContent=d.action;
-  document.getElementById('lfItem').textContent=d.item;
-  document.getElementById('lfAmt').textContent=d.amt;
+  if(!lf) return;
+  const emojiEl=document.getElementById('lfEmoji');
+  const bodyEl=document.getElementById('lfBody');
+  const itemEl=document.getElementById('lfItem');
+  const timeEl=document.getElementById('lfTime');
+
+  if(feedData.length){
+    // โหมด 1: ข้อมูลจริง ไม่ระบุตัวตน
+    const d=feedData[fi%feedData.length];fi++;
+    const verb = d.action==='ขาย'||d.action==='ขายฝาก' ? 'มีคนเพิ่งขาย' : 'มีคนเพิ่งซื้อ';
+    emojiEl.textContent='🎉';
+    bodyEl.querySelector('b').textContent=verb;
+    itemEl.textContent=d.item;
+    timeEl.textContent=_timeAgo(d.at);
+  } else {
+    // โหมด 3: fallback ตัวเลขรวมจริง
+    emojiEl.textContent='✨';
+    bodyEl.querySelector('b').textContent='ส่งมอบแล้ว '+TOTAL_DELIVERED+' เครื่อง';
+    itemEl.textContent='ลูกค้าไว้วางใจทั่วไทย';
+    timeEl.textContent='คุณภาพนางฟ้า';
+  }
   lf.classList.add('show');
   setTimeout(()=>lf.classList.remove('show'),4200);
 }
+loadLiveFeed();
 setTimeout(()=>{showFeed();setInterval(showFeed,7000);},3000);
 
 renderProducts(products);
