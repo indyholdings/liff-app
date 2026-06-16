@@ -298,20 +298,39 @@ header:not(.scrolled) .nav-login{box-shadow:0 4px 14px rgba(13,27,42,.18)}
 .product-img{height:210px;background:linear-gradient(135deg,var(--cream),var(--cream-2));display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
 .product-img .real-photo{width:100%;height:100%;object-fit:cover;display:block}
 .gallery-badge{position:absolute;bottom:10px;right:10px;background:rgba(13,27,42,.82);color:var(--gold-light,#E8D5A0);font-size:11px;font-weight:600;padding:5px 10px;border-radius:20px;pointer-events:none;backdrop-filter:blur(4px)}
-.lightbox{position:fixed;inset:0;z-index:2000;background:rgba(8,14,24,.95);display:none;align-items:center;justify-content:center;flex-direction:column}
+.lightbox{position:fixed;inset:0;z-index:2000;background:rgba(8,14,24,.95);display:none;align-items:center;justify-content:center;gap:24px;padding:20px;flex-wrap:wrap}
 .lightbox.open{display:flex;animation:lbFade .25s ease}
 @keyframes lbFade{from{opacity:0}to{opacity:1}}
-.lb-img{max-width:92vw;max-height:78vh;border-radius:14px;object-fit:contain;box-shadow:0 20px 60px rgba(0,0,0,.6)}
-.lb-close{position:absolute;top:18px;right:20px;width:44px;height:44px;border:none;border-radius:50%;background:rgba(255,255,255,.12);color:#fff;font-size:24px;cursor:pointer;transition:.2s}
+.lb-stage{display:flex;flex-direction:column;align-items:center}
+.lb-img{max-width:54vw;max-height:74vh;border-radius:14px;object-fit:contain;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+.lb-preview{background:var(--white,#FBF7EE);border-radius:20px;padding:26px;width:330px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,.4)}
+.lbp-badge{display:inline-block;background:linear-gradient(135deg,var(--gold,#C9AB56),var(--gold-light,#E8D5A0));color:var(--navy-deep,#0D1B2A);font-size:11px;font-weight:700;padding:4px 12px;border-radius:12px;margin-bottom:10px}
+.lbp-badge:empty{display:none}
+.lbp-name{font-size:23px;font-weight:700;color:var(--navy-deep,#0D1B2A);margin:0 0 10px}
+.lbp-desc{font-size:14px;color:#5a6b7d;line-height:1.7;margin-bottom:18px}
+.lbp-price-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:20px}
+.lbp-price{font-size:28px;font-weight:800;color:var(--gold-deep,#B8923C)}
+.lbp-old{font-size:16px;color:#9aa7b4;text-decoration:line-through}
+.lbp-save{background:#fdecea;color:#d8493c;font-size:12px;font-weight:700;padding:3px 10px;border-radius:10px}
+.lbp-cta{display:block;text-align:center;background:linear-gradient(135deg,#06C755,#05a648);color:#fff;font-weight:700;padding:14px;border-radius:14px;cursor:pointer;text-decoration:none;font-size:15px;box-shadow:0 8px 20px rgba(6,199,85,.3);transition:.2s}
+.lbp-cta:hover{transform:translateY(-2px);box-shadow:0 12px 26px rgba(6,199,85,.4)}
+.lb-close{position:absolute;top:18px;right:20px;width:44px;height:44px;border:none;border-radius:50%;background:rgba(255,255,255,.12);color:#fff;font-size:24px;cursor:pointer;transition:.2s;z-index:5}
 .lb-close:hover{background:var(--gold,#C9AB56);color:var(--navy-deep,#0D1B2A)}
-.lb-nav{position:absolute;top:50%;transform:translateY(-50%);width:52px;height:52px;border:none;border-radius:50%;background:rgba(255,255,255,.12);color:#fff;font-size:26px;cursor:pointer;transition:.2s;display:flex;align-items:center;justify-content:center}
+.lb-nav{position:absolute;top:50%;transform:translateY(-50%);width:52px;height:52px;border:none;border-radius:50%;background:rgba(255,255,255,.12);color:#fff;font-size:26px;cursor:pointer;transition:.2s;display:flex;align-items:center;justify-content:center;z-index:5}
 .lb-nav:hover{background:var(--gold,#C9AB56);color:var(--navy-deep,#0D1B2A)}
 .lb-prev{left:18px}.lb-next{right:18px}
 .lb-counter{margin-top:16px;color:#fff;font-size:14px;font-weight:500;letter-spacing:1px}
 .lb-dots{display:flex;gap:8px;margin-top:12px}
 .lb-dot{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.3);cursor:pointer;transition:.2s}
 .lb-dot.active{background:var(--gold,#C9AB56);width:22px;border-radius:4px}
-@media(max-width:680px){.lb-nav{width:42px;height:42px;font-size:22px}.lb-prev{left:8px}.lb-next{right:8px}}
+@media(max-width:880px){
+  .lightbox{flex-direction:column;flex-wrap:nowrap;gap:12px;overflow-y:auto;justify-content:flex-start;align-items:center;padding:56px 16px 24px}
+  .lb-stage{width:100%}
+  .lb-img{max-width:88vw;max-height:46vh}
+  .lb-preview{width:100%;max-width:440px;padding:20px;order:3}
+  .lbp-name{font-size:20px}.lbp-price{font-size:24px}
+  .lb-nav{display:none}
+}
 .product-badge{position:absolute;top:12px;left:12px;background:var(--navy-deep);color:var(--gold-light);font-size:11px;font-weight:600;padding:5px 12px;border-radius:12px;z-index:2}
 .product-badge.hot{background:#e2483f;color:#fff}
 .fav{position:absolute;top:12px;right:12px;width:34px;height:34px;background:rgba(255,255,255,.92);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;color:#cbd5e1;cursor:pointer;transition:.2s;z-index:2}
@@ -680,10 +699,23 @@ footer{background:#0a141f;color:#fff;padding:60px 24px 100px;text-align:center}
 <div class="lightbox" id="lightbox" onclick="if(event.target===this)closeGallery()">
   <button class="lb-close" onclick="closeGallery()" aria-label="ปิด">✕</button>
   <button class="lb-nav lb-prev" onclick="lbMove(-1)" aria-label="ก่อนหน้า">‹</button>
-  <img class="lb-img" id="lbImg" src="" alt="รูปสินค้า">
+  <div class="lb-stage">
+    <img class="lb-img" id="lbImg" src="" alt="รูปสินค้า">
+    <div class="lb-counter" id="lbCounter">1 / 1</div>
+    <div class="lb-dots" id="lbDots"></div>
+  </div>
   <button class="lb-nav lb-next" onclick="lbMove(1)" aria-label="ถัดไป">›</button>
-  <div class="lb-counter" id="lbCounter">1 / 1</div>
-  <div class="lb-dots" id="lbDots"></div>
+  <div class="lb-preview" id="lbPreview">
+    <div class="lbp-badge" id="lbpBadge"></div>
+    <h3 class="lbp-name" id="lbpName"></h3>
+    <div class="lbp-desc" id="lbpDesc"></div>
+    <div class="lbp-price-row">
+      <span class="lbp-price" id="lbpPrice"></span>
+      <span class="lbp-old" id="lbpOld"></span>
+      <span class="lbp-save" id="lbpSave"></span>
+    </div>
+    <a class="lbp-cta" id="lbpCta">💬 สนใจ — ทักไลน์เลย</a>
+  </div>
 </div>
 
 <div class="live-feed" id="liveFeed">
@@ -761,6 +793,15 @@ function openGallery(prodIdx){
   const p = list[prodIdx];
   if(!p || !p.gallery) return;
   _lbImgs = p.gallery; _lbIdx = 0;
+  // เติมรายละเอียดสินค้าใน preview
+  document.getElementById('lbpBadge').textContent = p.badge || '';
+  document.getElementById('lbpName').textContent = p.name;
+  document.getElementById('lbpDesc').textContent = p.desc;
+  document.getElementById('lbpPrice').textContent = fmt(p.price);
+  document.getElementById('lbpOld').textContent = p.old ? fmt(p.old) : '';
+  const pct = p.old ? Math.round((1 - p.price/p.old)*100) : 0;
+  document.getElementById('lbpSave').textContent = pct>0 ? ('-'+pct+'%') : '';
+  document.getElementById('lbpCta').onclick = ()=>interestClick(prodIdx);
   const dots = document.getElementById('lbDots');
   dots.innerHTML = _lbImgs.map((_,i)=>`<span class="lb-dot${i===0?' active':''}" onclick="lbGo(${i})"></span>`).join('');
   _lbRender();
@@ -774,6 +815,19 @@ function _lbRender(){
 }
 function lbMove(dir){ _lbIdx=(_lbIdx+dir+_lbImgs.length)%_lbImgs.length; _lbRender(); }
 function lbGo(i){ _lbIdx=i; _lbRender(); }
+/* swipe บนมือถือ */
+(function(){
+  let x0=null;
+  const stage=document.getElementById('lbImg');
+  if(!stage) return;
+  stage.addEventListener('touchstart',e=>{x0=e.touches[0].clientX;},{passive:true});
+  stage.addEventListener('touchend',e=>{
+    if(x0===null)return;
+    const dx=e.changedTouches[0].clientX-x0;
+    if(Math.abs(dx)>40){ lbMove(dx<0?1:-1); }
+    x0=null;
+  },{passive:true});
+})();
 function closeGallery(){
   document.getElementById('lightbox').classList.remove('open');
   document.body.style.overflow='';
