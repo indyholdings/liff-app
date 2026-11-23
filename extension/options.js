@@ -50,6 +50,10 @@
     try {
       const health = await api.get('/health', { silentAuth: true });
       line('ok', 'เซิร์ฟเวอร์ตอบกลับ' + (health.version ? ' (เวอร์ชัน ' + health.version + ')' : ''));
+      if (health.configured === false) {
+        const missing = Array.isArray(health.missing) && health.missing.length ? ': ' + health.missing.join(', ') : '';
+        line('warn', 'เซิร์ฟเวอร์ยังตั้งค่า secret ไม่ครบ' + missing + ' — แจ้งผู้ดูแลระบบ');
+      }
       try {
         const me = await api.get('/api/me', { silentAuth: true });
         line('ok', 'token ใช้ได้ — เข้าสู่ระบบเป็น ' + me.staff.name + (me.staff.role === 'admin' ? ' (แอดมิน)' : ''));

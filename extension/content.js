@@ -45,7 +45,7 @@
   host.id = 'sidecar-host';
   host.setAttribute('style', [
     'position:fixed', 'top:0', 'right:0', 'bottom:0', 'width:' + SIDECAR_DOM.panelWidth + 'px',
-    'z-index:' + Z, 'background:#f4f5f7', 'border-left:1px solid #d9dde2',
+    'z-index:' + Z, 'background:#f4f5f7', 'border-left:1px solid rgba(128,136,146,.4)',
     'box-shadow:-4px 0 16px rgba(16,24,40,.08)', 'display:none',
   ].join(';'));
 

@@ -273,6 +273,24 @@ describe("notes and media", () => {
     assert.equal((await h.api("DELETE", `/api/notes/${a.body.note.id}`)).status, 404);
   });
 
+  it("lets an agent delete only their own staff notes, and nobody delete agent or system notes", async () => {
+    const id = await newLead("U1");
+    await h.seedStaff("ต้น", "agent", "agent-token");
+    const asAgent = { Authorization: "Bearer agent-token" };
+    const adminNote = (await h.api("POST", `/api/leads/${id}/notes`, { body: "โน้ตของแอดมิน" })).body.note;
+    const agentNote = (await h.api("POST", `/api/leads/${id}/notes`, { body: "โน้ตของต้น" }, asAgent)).body.note;
+    await pg.query(`insert into sidecar.notes (lead_id, body, kind) values ($1, 'ได้รับสลิป', 'system')`, [id]);
+    const systemNote = (await h.api("GET", `/api/leads/${id}`)).body.notes.find((n: { kind: string }) => n.kind === "system");
+
+    assert.equal((await h.api("DELETE", `/api/notes/${adminNote.id}`, undefined, asAgent)).status, 404, "agent cannot delete another person's note");
+    assert.equal((await h.api("DELETE", `/api/notes/${systemNote.id}`)).status, 404, "system notes stay, even for an admin");
+    assert.equal((await h.api("DELETE", `/api/notes/${agentNote.id}`, undefined, asAgent)).status, 200, "agent deletes their own");
+    assert.equal((await h.api("DELETE", `/api/notes/${adminNote.id}`)).status, 200);
+    const left = (await h.api("GET", `/api/leads/${id}`)).body.notes;
+    assert.equal(left.filter((n: { kind: string }) => n.kind === "staff").length, 0);
+    assert.ok(left.some((n: { kind: string }) => n.kind === "system"));
+  });
+
   it("recategorises media", async () => {
     await h.webhook([h.imageEvent("U1")]);
     await h.settle();

@@ -272,7 +272,7 @@ export function createMockApp() {
 
   // ---------------------------------------------------------------- routes
   async function api(method, p, url, req, body) {
-    if (method === 'GET' && p === '/health') return { ok: true, version: 'mock-0.1.0' };
+    if (method === 'GET' && p === '/health') return { ok: true, version: 'mock-0.1.0', configured: true, missing: [] };
     if (method === 'POST' && p === '/webhook') return { ok: true };
 
     if (method === 'POST' && p === '/api/admin/staff') {
@@ -287,6 +287,7 @@ export function createMockApp() {
     let m;
 
     if (method === 'GET' && p === '/api/me') return { ok: true, staff: staffView(me) };
+    if (method === 'GET' && p === '/api/staff') return { ok: true, staff: db.staff.map(staffView) };
 
     if (method === 'POST' && p === '/api/staff/link-line') {
       if (req.headers['x-line-id-token'] !== DEMO_ID_TOKEN) throw new HttpError(401, 'unauthorized', 'invalid LINE id token');
@@ -326,6 +327,7 @@ export function createMockApp() {
       if (method === 'GET') return bundle(l, 'id');
       if (method === 'PATCH') {
         const allowed = ['full_name', 'phone', 'address', 'postcode', 'stage', 'tags', 'interests', 'assignee_id', 'follow_up_at'];
+        if (Array.isArray(body.unlock)) l.locked_fields = l.locked_fields.filter((f) => !body.unlock.includes(f));
         for (const k of Object.keys(body)) {
           if (!allowed.includes(k)) continue;
           let v = body[k];
@@ -334,7 +336,10 @@ export function createMockApp() {
           if ((k === 'tags' || k === 'interests') && !Array.isArray(v)) throw bad(k + ' must be an array');
           if (k === 'assignee_id' && v != null && !db.staff.some((s) => s.id === v)) throw bad('unknown assignee');
           l[k] = v === '' ? null : v;
-          if (LOCKABLE.includes(k) && !l.locked_fields.includes(k)) l.locked_fields.push(k);
+          if (!LOCKABLE.includes(k)) continue;
+          // An edit locks the field; clearing it hands the field back to the agent.
+          if (l[k] == null) l.locked_fields = l.locked_fields.filter((f) => f !== k);
+          else if (!l.locked_fields.includes(k)) l.locked_fields.push(k);
         }
         l.updated_at = now();
         return { ok: true, lead: viewLead(l) };
@@ -429,7 +434,8 @@ export function createMockApp() {
     if (p === '/api/products') {
       if (method === 'GET') {
         const q = (url.searchParams.get('q') || '').trim().toLowerCase();
-        const rows = db.products.filter((x) => !q || x.name.toLowerCase().includes(q) || (x.sku || '').toLowerCase().includes(q));
+        const all = url.searchParams.get('all') === '1';
+        const rows = db.products.filter((x) => (all || x.active) && (!q || x.name.toLowerCase().includes(q) || (x.sku || '').toLowerCase().includes(q)));
         return { ok: true, products: rows };
       }
       if (method === 'POST') {
@@ -442,6 +448,7 @@ export function createMockApp() {
     if (method === 'PATCH' && (m = /^\/api\/products\/(\d+)$/.exec(p))) {
       const pr = db.products.find((x) => x.id === Number(m[1]));
       if (!pr) throw notFound('product not found');
+      if ('sku' in body) pr.sku = body.sku || null;
       if ('name' in body) pr.name = String(body.name);
       if ('price' in body) pr.price = round2(body.price);
       if ('category' in body) pr.category = body.category || null;

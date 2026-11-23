@@ -208,8 +208,9 @@ const noteAdd: Handler = async ({ deps, params, body, staff }) => {
   return ok({ note: await repo.addNote(deps.db, lead.id, text, "staff", staff.name, body.pinned === true) });
 };
 
-const noteDelete: Handler = async ({ deps, params }) => {
-  if (!(await repo.deleteNote(deps.db, intParam(params[0])))) throw notFound("Note not found");
+const noteDelete: Handler = async ({ deps, params, staff }) => {
+  const by = { name: staff.name, isAdmin: staff.role === "admin" };
+  if (!(await repo.deleteNote(deps.db, intParam(params[0]), by))) throw notFound("Note not found or not yours to delete");
   return ok();
 };
 

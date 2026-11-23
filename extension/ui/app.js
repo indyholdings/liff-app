@@ -53,6 +53,12 @@
     return el;
   }
 
+  /** Replaces an element's children. Unlike replaceChildren it flattens arrays and skips null/false. */
+  function fill(el, ...kids) {
+    el.replaceChildren();
+    return append(el, kids);
+  }
+
   function h(tag, attrs, ...kids) {
     const el = document.createElement(tag);
     let value;
@@ -241,6 +247,7 @@
     403: 'ไม่มีสิทธิ์ทำรายการนี้',
     404: 'ไม่พบข้อมูล',
     500: 'ระบบขัดข้อง ลองใหม่อีกครั้ง',
+    503: 'เซิร์ฟเวอร์ยังตั้งค่าไม่ครบ แจ้งผู้ดูแลระบบ',
   };
 
   function createApi(initial) {
@@ -405,10 +412,22 @@
       const subBits = [];
       if (l.full_name && l.display_name && l.full_name !== l.display_name) subBits.push(l.full_name);
       if (l.last_message_at) subBits.push('ล่าสุด ' + relTime(l.last_message_at));
-      subBits.push(l.assignee_name ? 'ดูแลโดย ' + l.assignee_name : 'ยังไม่มีผู้ดูแล');
+      const staff = this.app.staffList;
+      if (!(staff && staff.length)) subBits.push(l.assignee_name ? 'ดูแลโดย ' + l.assignee_name : 'ยังไม่มีผู้ดูแล');
 
-      const claim = me && l.assignee_id !== me.id
-        ? h('button', { type: 'button', class: 'sc-btn sc-small', 'data-sc': 'claim', onclick: () => this.claim() }, 'รับเคสนี้')
+      let claim = null;
+      if (staff && staff.length) {
+        claim = h('select', {
+          class: 'sc-input sc-assignee', 'aria-label': 'ผู้ดูแลลูกค้า', title: 'ผู้ดูแลลูกค้า', 'data-sc': 'assignee',
+          onchange: (e) => this.setAssignee(e.target.value ? Number(e.target.value) : null),
+        }, h('option', { value: '' }, 'ไม่มีผู้ดูแล'), staff.map((s) => h('option', { value: s.id }, s.name)));
+        claim.value = l.assignee_id == null ? '' : String(l.assignee_id);
+      } else if (me && l.assignee_id !== me.id) {
+        claim = h('button', { type: 'button', class: 'sc-btn sc-small', 'data-sc': 'claim', onclick: () => this.setAssignee(me.id) }, 'รับเคสนี้');
+      }
+      const stageLock = (l.locked_fields || []).includes('stage')
+        ? h('div', { class: 'sc-lockline', 'data-sc': 'stage-lock' }, icon('lock'), 'ทีมตั้งสถานะเอง Agent จะไม่เปลี่ยนให้ ',
+          h('button', { type: 'button', class: 'sc-link', onclick: () => this.unlock('stage') }, 'ให้ Agent ดูแลสถานะต่อ'))
         : null;
 
       const stageChips = h('div', { class: 'sc-chips', role: 'group', 'aria-label': 'สถานะลูกค้า', 'data-sc': 'stages' },
@@ -434,7 +453,7 @@
           h('button', { type: 'button', class: 'sc-x', 'aria-label': 'ลบแท็ก ' + t, onclick: () => this.removeTag(t) }, '×'))),
         tagInput);
 
-      this.secHead.replaceChildren(h('div', { class: 'sc-lead-head' },
+      fill(this.secHead, h('div', { class: 'sc-lead-head' },
         h('div', { class: 'sc-ident' },
           avatar(l),
           h('div', { class: 'sc-ident-text' },
@@ -442,6 +461,7 @@
             h('div', { class: 'sc-sub' }, subBits.join(' · '))),
           claim),
         stageChips,
+        stageLock,
         tags));
     }
 
@@ -463,11 +483,20 @@
       }
     }
 
-    async claim() {
+    async setAssignee(id) {
       try {
-        await this.patchLead({ assignee_id: this.app.me.id }, 'รับเคสแล้ว');
-        this.renderHead();
+        await this.patchLead({ assignee_id: id }, id == null ? 'ยกเลิกผู้ดูแลแล้ว' : 'ตั้งผู้ดูแลแล้ว');
       } catch (err) { this.app.toast(err.message, 'err'); }
+      this.renderHead();
+    }
+
+    /** Hands a field back to the agent: it may fill or change it again. */
+    async unlock(key) {
+      try {
+        await this.patchLead({ unlock: [key] }, 'ปลดล็อกแล้ว — Agent กรอกช่องนี้ได้อีกครั้ง');
+      } catch (err) { this.app.toast(err.message, 'err'); }
+      this.renderHead();
+      this.syncCard();
     }
 
     async addTag(input) {
@@ -509,7 +538,7 @@
             this.textActions(() => l.suggested_reply, 'reply'));
         }
       }
-      this.secAgent.replaceChildren(head, body);
+      fill(this.secAgent, head, body);
     }
 
     textActions(getText, key) {
@@ -558,7 +587,7 @@
           h('span', { class: 'sc-sub' }, msgs.length + ' ข้อความ')),
         list);
       this.msgDetails.addEventListener('toggle', () => { if (this.msgDetails.open) list.scrollTop = list.scrollHeight; });
-      this.secMsgs.replaceChildren(this.msgDetails);
+      fill(this.secMsgs, this.msgDetails);
     }
 
     // ---- lead card (inline edit)
@@ -566,7 +595,11 @@
       const grid = h('div', { class: 'sc-grid-card' });
       for (const f of CARD_FIELDS) {
         const state = h('span', { class: 'sc-state' });
-        const lock = h('span', { class: 'sc-lockmark', title: 'ทีมแก้ไขเอง — Agent จะไม่เขียนทับ', hidden: true }, icon('lock'));
+        const lock = h('button', {
+          type: 'button', class: 'sc-lockmark', hidden: true, 'data-lock': f.key,
+          title: 'ทีมแก้ไขเอง — Agent จะไม่เขียนทับ (กดเพื่อปลดล็อก)', 'aria-label': 'ปลดล็อก ' + f.label + ' ให้ Agent กรอกได้',
+          onclick: (e) => { e.preventDefault(); this.unlock(f.key); },
+        }, icon('lock'));
         const common = {
           class: 'sc-input', id: 'sc-f-' + f.key, placeholder: f.placeholder, 'data-field': f.key, autocomplete: 'off',
           onblur: () => this.saveField(f.key),
@@ -589,11 +622,11 @@
           control = h('div', { class: 'sc-phone-wrap' }, input, this.callLink);
         }
         grid.append(h('div', { class: 'sc-field' + (f.wide ? ' sc-wide' : '') },
-          h('label', { class: 'sc-label', for: 'sc-f-' + f.key }, f.label, lock, state),
+          h('div', { class: 'sc-label' }, h('label', { for: 'sc-f-' + f.key }, f.label), lock, state),
           control));
       }
       this.samePhoneBox = h('div', { hidden: true });
-      this.secCard.replaceChildren(
+      fill(this.secCard, 
         h('div', { class: 'sc-sec-head' }, h('h2', { class: 'sc-sec-title' }, 'ข้อมูลลูกค้า')),
         h('div', { class: 'sc-sec-body' }, this.samePhoneBox, grid));
     }
@@ -616,7 +649,7 @@
       const same = this.b.same_phone || [];
       if (!same.length) { this.samePhoneBox.hidden = true; this.samePhoneBox.replaceChildren(); return; }
       this.samePhoneBox.hidden = false;
-      this.samePhoneBox.replaceChildren(h('div', { class: 'sc-notice', 'data-sc': 'same-phone' },
+      fill(this.samePhoneBox, h('div', { class: 'sc-notice', 'data-sc': 'same-phone' },
         h('b', null, 'ลูกค้าเก่า'), ' — เบอร์นี้ตรงกับ ',
         same.map((s, i) => [i ? ', ' : '', h('button', { type: 'button', class: 'sc-link', onclick: () => this.app.openLead(s.id) }, leadName(s))])));
     }
@@ -737,7 +770,7 @@
             h('button', { type: 'button', class: 'sc-btn sc-small', 'data-sc': 'summary', onclick: () => this.showSummary() }, 'ร่างข้อความสรุป'),
             h('button', { type: 'button', class: 'sc-btn sc-small', 'data-sc': 'order-new', onclick: () => { this.draft = this.blankDraft(); this.orderReadonly = false; this.renderOrder(); } }, icon('plus'), 'สร้างออเดอร์ใหม่')),
           this.summaryBox);
-        this.secOrder.replaceChildren(head, body);
+        fill(this.secOrder, head, body);
         this.updateTotals();
         this.renderSummary();
         return;
@@ -756,7 +789,7 @@
           const r = await this.api.get('/api/products?q=' + encodeURIComponent(q));
           if (seq !== searchSeq) return;
           const products = (r.products || []).filter((p) => p.active !== false).slice(0, 20);
-          results.replaceChildren(products.length
+          fill(results, products.length
             ? h('div', null, products.map((p) => h('button', {
               type: 'button', class: 'sc-search-item', 'data-product-id': p.id,
               onclick: () => { this.addProduct(p); searchInput.value = ''; results.hidden = true; },
@@ -765,7 +798,7 @@
           results.hidden = false;
         } catch (err) {
           if (seq !== searchSeq) return;
-          results.replaceChildren(h('div', { class: 'sc-search-empty' }, err.message));
+          fill(results, h('div', { class: 'sc-search-empty' }, err.message));
           results.hidden = false;
         }
       }, 250);
@@ -820,7 +853,7 @@
         h('div', { class: 'sc-row-gap' }, this.saveBtn, h('button', { type: 'button', class: 'sc-btn', 'data-sc': 'summary', onclick: () => this.showSummary() }, 'ร่างข้อความสรุป')),
         statusRow,
         this.summaryBox);
-      this.secOrder.replaceChildren(head, body);
+      fill(this.secOrder, head, body);
       this.updateTotals();
       this.renderSummary();
     }
@@ -924,7 +957,7 @@
     renderSummary() {
       if (!this.summaryBox) return;
       if (this.summaryText == null) { this.summaryBox.replaceChildren(); return; }
-      this.summaryBox.replaceChildren(
+      fill(this.summaryBox, 
         h('div', { class: 'sc-label' }, 'ข้อความสรุป (สร้างจากออเดอร์ที่บันทึก ยอดตรงเสมอ)'),
         h('blockquote', { class: 'sc-quote sc-plain', 'data-sc': 'summary-text' }, this.summaryText),
         this.textActions(() => this.summaryText, 'summary'));
@@ -940,7 +973,7 @@
       this.notePin = h('input', { type: 'checkbox' });
       this.noteBtn = h('button', { type: 'button', class: 'sc-btn sc-small sc-primary', 'data-sc': 'note-add', onclick: () => this.addNote() }, 'บันทึกโน้ต');
       this.notesCount = h('span', { class: 'sc-muted sc-small' });
-      this.secNotes.replaceChildren(
+      fill(this.secNotes, 
         h('div', { class: 'sc-sec-head' }, h('h2', { class: 'sc-sec-title' }, 'โน้ต'), this.notesCount),
         h('div', { class: 'sc-sec-body' },
           this.noteInput,
@@ -955,7 +988,7 @@
       });
       this.notesCount.textContent = notes.length ? notes.length + ' รายการ' : '';
       const me = this.app.me;
-      this.notesList.replaceChildren(notes.length
+      fill(this.notesList, notes.length
         ? h('div', { class: 'sc-notes' }, notes.map((n) => h('div', { class: 'sc-note' + (n.pinned ? ' sc-pinned' : ''), 'data-note-id': n.id },
           h('div', { class: 'sc-note-head' },
             h('span', { class: 'sc-kind sc-kind-' + n.kind }, NOTE_KIND[n.kind] || n.kind),
@@ -1027,7 +1060,7 @@
         }
         return btn;
       }));
-      this.secAlbum.replaceChildren(
+      fill(this.secAlbum, 
         h('div', { class: 'sc-sec-head' }, h('h2', { class: 'sc-sec-title' }, 'อัลบั้ม')),
         h('div', { class: 'sc-sec-body' }, media.length
           ? [filters, grid]
@@ -1063,7 +1096,7 @@
         const src = safeUrl(m.url);
         const img = h('img', { alt: m.caption || MEDIA_LABEL[m.category] || 'รูปจากลูกค้า' });
         if (src) img.src = src;
-        stage.replaceChildren(img);
+        fill(stage, img);
 
         const catSelect = h('select', { class: 'sc-input', 'data-sc': 'media-category', 'aria-label': 'หมวดรูป', onchange: (e) => this.patchMedia(m, { category: e.target.value }) },
           MEDIA_CATS.map((c) => h('option', { value: c.id }, c.label)));
@@ -1092,7 +1125,7 @@
               h('dt', null, 'เทียบออเดอร์'), match),
             h('div', { class: 'sc-slip-warn' }, 'อ่านสลิปได้ ไม่ได้ยืนยันว่าเงินเข้า — ตรวจยอดในบัญชีก่อนยืนยันชำระ'));
         }
-        info.replaceChildren(...parts);
+        fill(info, ...parts);
       };
       const openTab = () => {
         const m = this.filteredMedia()[idx];
@@ -1144,7 +1177,7 @@
       });
       const in3h = () => new Date(Date.now() + 3 * 3600 * 1000);
       const tomorrow10 = () => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(10, 0, 0, 0); return d; };
-      this.secFollow.replaceChildren(
+      fill(this.secFollow, 
         h('div', { class: 'sc-sec-head' }, h('h2', { class: 'sc-sec-title' }, 'ตามลูกค้า')),
         h('div', { class: 'sc-sec-body' },
           status,
@@ -1183,7 +1216,7 @@
     refresh() { return this.load(); }
 
     renderIdle() {
-      this.el.replaceChildren(h('div', { class: 'sc-view' }, emptyState('เลือกแชทลูกค้า', 'เปิดแชทใน LINE OA ทางซ้าย แล้ว Sidecar จะแสดงการ์ดลูกค้า โน้ต อัลบั้ม และออเดอร์ของแชทนั้น')));
+      fill(this.el, h('div', { class: 'sc-view' }, emptyState('เลือกแชทลูกค้า', 'เปิดแชทใน LINE OA ทางซ้าย แล้ว Sidecar จะแสดงการ์ดลูกค้า โน้ต อัลบั้ม และออเดอร์ของแชทนั้น')));
     }
 
     setChat(chat) {
@@ -1198,14 +1231,14 @@
       const seq = ++this.seq;
       if (this.leadView) { this.leadView.stop(); this.leadView = null; }
       if (!chat || !chat.chatId) { this.renderIdle(); return; }
-      this.el.replaceChildren(skeleton());
+      fill(this.el, skeleton());
       try {
         const q = chat.name ? '?name=' + encodeURIComponent(chat.name) : '';
         const b = await this.app.api.get('/api/leads/by-chat/' + encodeURIComponent(chat.chatId) + q);
         if (seq !== this.seq) return;
         if (b.lead) {
           this.leadView = new LeadView(this.app, b, {});
-          this.el.replaceChildren(this.leadView.el);
+          fill(this.el, this.leadView.el);
           if (this.app.top() === this) this.leadView.start();
         } else {
           this.renderUnknown(b);
@@ -1213,15 +1246,15 @@
       } catch (err) {
         if (seq !== this.seq) return;
         if (err.status === 401) return;
-        this.el.replaceChildren(h('div', { class: 'sc-view' }, errorState(err, () => this.load())));
+        fill(this.el, h('div', { class: 'sc-view' }, errorState(err, () => this.load())));
       }
     }
 
     renderUnknown(b) {
       const chat = this.chat;
       const list = h('div', { class: 'sc-list', 'data-sc': 'candidates' });
-      const fill = (leads, emptyText) => {
-        list.replaceChildren(leads.length
+      const showCandidates = (leads, emptyText) => {
+        fill(list, leads.length
           ? h('div', null, leads.map((c) => h('div', { class: 'sc-row', style: 'cursor:default', 'data-lead-id': c.id },
             avatar(c, true),
             h('div', { class: 'sc-row-main' },
@@ -1231,21 +1264,21 @@
           : h('div', { class: 'sc-muted sc-small', style: 'padding:10px 12px' }, emptyText));
       };
       const candidates = b.candidates || [];
-      fill(candidates, 'ไม่พบลูกค้าที่ชื่อตรงกับแชทนี้');
+      showCandidates(candidates, 'ไม่พบลูกค้าที่ชื่อตรงกับแชทนี้');
 
       let seq = 0;
       const search = h('input', { class: 'sc-input', type: 'search', placeholder: 'ค้นหาชื่อหรือเบอร์เพื่อผูกเอง…', 'aria-label': 'ค้นหาลูกค้าเพื่อผูก', 'data-sc': 'link-search' });
       search.addEventListener('input', debounce(async () => {
         const q = search.value.trim();
         const s = ++seq;
-        if (!q) { fill(candidates, 'ไม่พบลูกค้าที่ชื่อตรงกับแชทนี้'); return; }
+        if (!q) { showCandidates(candidates, 'ไม่พบลูกค้าที่ชื่อตรงกับแชทนี้'); return; }
         try {
           const r = await this.app.api.get('/api/leads?limit=8&q=' + encodeURIComponent(q));
-          if (s === seq) fill(r.leads || [], 'ไม่พบ "' + q + '"');
-        } catch (err) { if (s === seq) fill([], err.message); }
+          if (s === seq) showCandidates(r.leads || [], 'ไม่พบ "' + q + '"');
+        } catch (err) { if (s === seq) showCandidates([], err.message); }
       }, 300));
 
-      this.el.replaceChildren(h('div', { class: 'sc-view', 'data-sc': 'unknown-chat' },
+      fill(this.el, h('div', { class: 'sc-view', 'data-sc': 'unknown-chat' },
         h('section', { class: 'sc-card' },
           h('div', { class: 'sc-sec-body' },
             h('b', null, 'ยังไม่มีการ์ดของแชทนี้' + (chat.name ? ' (' + chat.name + ')' : '')),
@@ -1292,16 +1325,16 @@
 
     async load() {
       if (this.leadView) { this.leadView.stop(); this.leadView = null; }
-      this.body.replaceChildren(skeleton());
+      fill(this.body, skeleton());
       try {
         const b = await this.app.api.get('/api/leads/' + this.id);
         if (!b.lead) throw new ApiError(404, 'not_found', STATUS_TEXT[404]);
         this.leadView = new LeadView(this.app, b, {});
-        this.body.replaceChildren(this.leadView.el);
+        fill(this.body, this.leadView.el);
         if (this.app.top() === this) this.leadView.start();
       } catch (err) {
         if (err.status === 401) return;
-        this.body.replaceChildren(h('div', { class: 'sc-view' }, errorState(err, () => this.load())));
+        fill(this.body, h('div', { class: 'sc-view' }, errorState(err, () => this.load())));
       }
     }
   }
@@ -1351,7 +1384,7 @@
         'aria-selected': this.tab === id ? 'true' : 'false', 'data-tab': id,
         onclick: () => { if (this.tab !== id) { this.tab = id; this.renderTabs(); this.load(); } },
       }, label, n != null ? (id === 'due' && n > 0 ? h('span', { class: 'sc-badge' }, n) : h('span', { class: 'sc-count' }, n)) : null);
-      this.tabsEl.replaceChildren(
+      fill(this.tabsEl, 
         tab('all', 'ทั้งหมด', this.loadedOnce ? total : null),
         tab('due', 'ต้องตาม', this.loadedOnce ? this.dueCount : null, 'sc-due'),
         STAGES.map((s) => tab(s.id, s.label, this.loadedOnce ? (this.counts[s.id] || 0) : null, 'sc-st-' + s.id)));
@@ -1370,7 +1403,7 @@
       const seq = ++this.seq;
       const offset = opts.more ? this.leads.length : 0;
       if (!opts.quiet && !opts.more) {
-        this.listEl.replaceChildren(h('div', { class: 'sc-list', 'aria-busy': 'true', 'data-sc': 'loading' },
+        fill(this.listEl, h('div', { class: 'sc-list', 'aria-busy': 'true', 'data-sc': 'loading' },
           [0, 1, 2, 3, 4].map(() => h('div', { class: 'sc-row', style: 'cursor:default' },
             h('div', { class: 'sc-skel', style: 'width:36px;height:36px;border-radius:50%;flex:none' }),
             h('div', { class: 'sc-row-main', style: 'display:flex;flex-direction:column;gap:6px' },
@@ -1396,7 +1429,7 @@
       } catch (err) {
         if (seq !== this.seq || err.status === 401) return;
         if (opts.quiet) return;
-        this.listEl.replaceChildren(errorState(err, () => this.load()));
+        fill(this.listEl, errorState(err, () => this.load()));
       }
     }
 
@@ -1406,7 +1439,7 @@
           : this.tab === 'due' ? 'ไม่มีลูกค้าที่ถึงเวลาต้องตาม'
             : this.tab === 'all' ? 'ยังไม่มีลูกค้า — การ์ดจะถูกสร้างเมื่อมีคนทัก LINE OA เข้ามา'
               : 'ไม่มีลูกค้าในสถานะ "' + (STAGE_LABEL[this.tab] || this.tab) + '"';
-        this.listEl.replaceChildren(emptyState('ว่าง', text));
+        fill(this.listEl, emptyState('ว่าง', text));
         return;
       }
       const rows = this.leads.map((l) => h('button', { type: 'button', class: 'sc-row', 'data-lead-id': l.id, onclick: () => this.app.openLead(l.id) },
@@ -1419,7 +1452,7 @@
             h('span', { class: 'sc-row-preview' }, l.last_message_preview || l.ai_summary || l.phone || '—'),
             isPast(l.follow_up_at) ? h('span', { class: 'sc-due-dot', title: 'ถึงเวลาตาม' }, icon('clock'), 'ตาม') : null,
             stageTag(l.stage)))));
-      this.listEl.replaceChildren(h('div', { class: 'sc-list' }, rows),
+      fill(this.listEl, h('div', { class: 'sc-list' }, rows),
         this.hasMore ? h('div', { style: 'padding:10px' }, h('button', { type: 'button', class: 'sc-btn sc-block', onclick: () => this.load({ more: true }) }, 'โหลดเพิ่ม')) : null);
     }
   }
@@ -1479,11 +1512,11 @@
     async load() {
       const app = this.app;
       try {
-        const [s, p] = await Promise.all([app.api.get('/api/settings'), app.api.get('/api/products?q=')]);
+        const [s, p] = await Promise.all([app.api.get('/api/settings'), app.api.get('/api/products?all=1&q=')]);
         this.render(s.settings || {}, p.products || []);
       } catch (err) {
         if (err.status === 401) return;
-        this.body.replaceChildren(errorState(err, () => this.load()));
+        fill(this.body, errorState(err, () => this.load()));
       }
     }
     render(settings, products) {
@@ -1516,7 +1549,7 @@
 
       const list = h('div', { style: 'display:flex;flex-direction:column;gap:6px', 'data-sc': 'product-list' });
       const drawProducts = () => {
-        list.replaceChildren(products.length ? h('div', { style: 'display:flex;flex-direction:column;gap:6px' }, products.map((p) => {
+        fill(list, products.length ? h('div', { style: 'display:flex;flex-direction:column;gap:6px' }, products.map((p) => {
           const save = async (body) => {
             try {
               const r = await app.api.patch('/api/products/' + p.id, body);
@@ -1550,7 +1583,7 @@
           newName, newPrice, h('button', { type: 'submit', class: 'sc-btn sc-small sc-primary', 'data-sc': 'prod-add' }, icon('plus'), 'เพิ่ม')),
         list);
 
-      this.body.replaceChildren(account, shop, catalog);
+      fill(this.body, account, shop, catalog);
     }
     async linkLine(btn) {
       btn.disabled = true;
@@ -1577,6 +1610,7 @@
       this.dueCount = 0;
       this.dueTimer = null;
       this.configOpen = false;
+      this.staffList = null;
     }
 
     start() {
@@ -1593,21 +1627,32 @@
     }
 
     async boot() {
-      this.main.replaceChildren(skeleton());
+      fill(this.main, skeleton());
       try {
         const r = await this.api.get('/api/me');
         this.me = r.staff;
         this.afterBoot();
       } catch (err) {
         if (err.status === 401) return; // config screen already shown by the hook
-        this.main.replaceChildren(h('div', { class: 'sc-view' }, errorState(err, () => this.boot()),
+        fill(this.main, h('div', { class: 'sc-view' }, errorState(err, () => this.boot()),
           h('div', { style: 'text-align:center' }, h('button', { type: 'button', class: 'sc-btn sc-small sc-ghost', onclick: () => this.showConfig() }, 'ตั้งค่าการเชื่อมต่อ'))));
       }
+    }
+
+    async loadStaff() {
+      try {
+        const r = await this.api.get('/api/staff');
+        this.staffList = r.staff || [];
+        const v = this.top();
+        const lv = v && v.leadView;
+        if (lv) lv.renderHead();
+      } catch (_) { this.staffList = null; /* the picker falls back to a "claim" button */ }
     }
 
     afterBoot() {
       this.configOpen = false;
       this.clearStack();
+      this.loadStaff();
       if (this.mode === 'inbox') {
         this.home = new InboxView(this, {});
       } else {
@@ -1630,7 +1675,7 @@
     }
     renderTop() {
       const v = this.top();
-      this.main.replaceChildren(v ? v.el : '');
+      fill(this.main, v ? v.el : '');
       this.main.scrollTop = (v && v._scroll) || 0;
       if (v && v.onShow) v.onShow();
     }
@@ -1687,7 +1732,7 @@
         gear.dataset.sc = 'open-settings';
         kids.push(gear);
       }
-      this.topbar.replaceChildren(...kids);
+      fill(this.topbar, ...kids);
     }
     setDueCount(n) {
       if (n === this.dueCount) return;
@@ -1714,8 +1759,7 @@
     // ---- feedback
     toast(text, kind) {
       const el = h('div', { class: 'sc-toast' + (kind ? ' sc-' + kind : ''), role: kind === 'err' ? 'alert' : 'status', 'data-sc': 'toast' }, text);
-      this.toasts.append(el);
-      while (this.toasts.children.length > 3) this.toasts.firstChild.remove();
+      fill(this.toasts, el); // one at a time, so feedback never piles up over the controls
       setTimeout(() => el.remove(), kind === 'err' ? 5000 : 2600);
     }
     overlayOpen() { return !!this.root.querySelector('.sc-lightbox, .sc-modal-back'); }

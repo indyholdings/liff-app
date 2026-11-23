@@ -271,8 +271,16 @@ export function addNote(db: Db, leadId: number, body: string, kind: Note["kind"]
   ) as Promise<Note>;
 }
 
-export async function deleteNote(db: Db, id: number): Promise<boolean> {
-  return (await one(db, `delete from sidecar.notes where id = $1 returning id`, [id])) !== null;
+// Only staff notes can be deleted: agent and system notes are the record of what
+// happened on the lead. An agent removes their own notes; an admin any staff note.
+export async function deleteNote(db: Db, id: number, by: { name: string; isAdmin: boolean }): Promise<boolean> {
+  return (await one(
+    db,
+    `delete from sidecar.notes
+      where id = $1 and kind = 'staff' and ($2::boolean or author_name = $3)
+      returning id`,
+    [id, by.isAdmin, by.name],
+  )) !== null;
 }
 
 // ---- media ----

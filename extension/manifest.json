@@ -15,7 +15,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["panel.html", "panel.js", "ui/*"],
+      "resources": ["panel.html", "panel.js", "panel.css", "ui/*"],
       "matches": ["https://chat.line.biz/*"]
     }
   ],
