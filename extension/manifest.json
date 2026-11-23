@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Sidecar for LINE OA",
+  "short_name": "Sidecar",
+  "version": "0.1.0",
+  "description": "การ์ดลูกค้า โน้ต อัลบั้ม และออเดอร์ ข้างแชท LINE OA Manager",
+  "permissions": ["storage", "clipboardWrite"],
+  "host_permissions": ["https://*.supabase.co/*", "http://localhost/*"],
+  "content_scripts": [
+    {
+      "matches": ["https://chat.line.biz/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["panel.html", "panel.js", "ui/*"],
+      "matches": ["https://chat.line.biz/*"]
+    }
+  ],
+  "options_ui": { "page": "options.html", "open_in_tab": true },
+  "action": { "default_title": "Sidecar — ตั้งค่า", "default_popup": "options.html" },
+  "icons": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" }
+}

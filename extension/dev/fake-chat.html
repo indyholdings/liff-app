@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fake OA chat — Sidecar dev</title>
+<link rel="icon" href="data:,">
+<style>
+  /* A plain stand-in for a chat console. It only exists so content.js has a page to run on. */
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { font: 14px/1.5 system-ui, -apple-system, "Noto Sans Thai", "Thonburi", sans-serif; color: #20242a; background: #fff; }
+  .oa { display: grid; grid-template-columns: 52px 290px 1fr; grid-template-rows: 30px 1fr; height: 100vh; }
+  .devbar { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; padding: 0 12px; background: #2b2f36; color: #cfd5dd; font-size: 12px; }
+  .devbar b { color: #fff; }
+  .rail { background: #3a4049; display: flex; flex-direction: column; align-items: center; gap: 14px; padding-top: 14px; }
+  .rail i { width: 24px; height: 24px; border-radius: 6px; background: #596170; display: block; }
+  .rail i:first-child { background: #8f98a6; }
+  .chatlist { border-right: 1px solid #e3e6ea; overflow: auto; background: #fafbfc; }
+  .chatlist h5 { margin: 0; padding: 12px 14px 8px; font-size: 12px; color: #6d7682; letter-spacing: .4px; }
+  .item { display: flex; gap: 10px; padding: 10px 14px; text-decoration: none; color: inherit; border-bottom: 1px solid #eef0f3; }
+  .item:hover { background: #f1f3f6; }
+  .item.active { background: #e6edf7; }
+  .pic { flex: none; width: 40px; height: 40px; border-radius: 50%; background: #c9d0d9; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; }
+  .item h6 { margin: 0; font-size: 14px; font-weight: 600; }
+  .item p { margin: 0; font-size: 12.5px; color: #6d7682; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 190px; }
+  .chat { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .chat-header { display: flex; align-items: center; gap: 10px; height: 56px; padding: 0 18px; border-bottom: 1px solid #e3e6ea; }
+  .chat-header h4 { margin: 0; font-size: 16px; }
+  .chat-header small { color: #8a929d; }
+  .msgs { flex: 1; min-height: 0; overflow: auto; padding: 18px; display: flex; flex-direction: column; gap: 8px; background: #eef1f5; }
+  .bubble { max-width: 62%; padding: 8px 12px; border-radius: 14px; background: #fff; align-self: flex-start; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .bubble.out { align-self: flex-end; background: #c8f0d6; }
+  .composer { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid #e3e6ea; background: #fff; }
+  .composer textarea { flex: 1; min-height: 76px; max-height: 220px; resize: none; padding: 9px 11px; border: 1px solid #cfd5dc; border-radius: 8px; font: inherit; outline: none; }
+  .composer textarea:focus { border-color: #7d8794; }
+  .composer button { align-self: flex-end; height: 38px; padding: 0 18px; border: 0; border-radius: 8px; background: #3a4049; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+  .empty { margin: auto; color: #8a929d; }
+</style>
+</head>
+<body>
+<div class="oa">
+  <div class="devbar"><b>หน้าจำลอง</b> ไม่ใช่ LINE OA Manager จริง — ใช้ทดสอบ content.js + แผง Sidecar เท่านั้น</div>
+  <nav class="rail" aria-hidden="true"><i></i><i></i><i></i><i></i></nav>
+  <aside class="chatlist">
+    <h5>แชททั้งหมด</h5>
+    <div id="list"></div>
+  </aside>
+  <main class="chat">
+    <header class="chat-header"><h4 class="chat-header-name" id="chatName"></h4><small id="chatId"></small></header>
+    <div class="msgs" id="msgs"></div>
+    <footer class="composer">
+      <textarea id="composer" placeholder="พิมพ์ข้อความ…"></textarea>
+      <button type="button" id="send">ส่ง</button>
+    </footer>
+  </main>
+</div>
+
+<script src="/extension/dev/fake-chat.js"></script>
+<script src="/extension/content.js"></script>
+</body>
+</html>

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sidecar — ตั้งค่า</title>
+  <link rel="stylesheet" href="ui/app.css">
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="sc-root opt-root">
+    <main class="sc-view">
+      <section class="sc-card">
+        <form class="sc-sec-body" id="form">
+          <div>
+            <b class="opt-title">Sidecar for LINE OA</b>
+            <div class="sc-muted">ตั้งค่าครั้งเดียว แล้วเปิด chat.line.biz — แผง Sidecar จะอยู่ด้านขวาของแชท</div>
+          </div>
+          <label class="sc-field">
+            <span class="sc-label">API URL</span>
+            <input class="sc-input" id="apiUrl" type="url" placeholder="https://xxxx.supabase.co/functions/v1/sidecar" autocomplete="off" spellcheck="false">
+          </label>
+          <label class="sc-field">
+            <span class="sc-label">Staff token</span>
+            <input class="sc-input" id="token" type="password" placeholder="token ประจำตัวที่แอดมินออกให้" autocomplete="off" spellcheck="false">
+          </label>
+          <label class="sc-check"><input type="checkbox" id="showToken"> แสดง token</label>
+          <div class="sc-row-gap">
+            <button class="sc-btn sc-primary" type="submit" id="save">บันทึก</button>
+            <button class="sc-btn" type="button" id="test">ทดสอบการเชื่อมต่อ</button>
+          </div>
+          <div id="result" class="opt-result" aria-live="polite"></div>
+        </form>
+      </section>
+      <div class="sc-muted sc-small opt-foot">
+        token เก็บไว้ในเบราว์เซอร์เครื่องนี้เท่านั้น · Sidecar ไม่ส่งข้อความแทนคุณ — เติมข้อความในช่องแชทให้ แล้วคุณเป็นคนกดส่ง
+      </div>
+    </main>
+  </div>
+  <script src="ui/app.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

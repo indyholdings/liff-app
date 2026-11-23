@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#ffffff">
+<title>Sidecar — ทีมงาน</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="extension/ui/app.css">
+<style>
+  html, body { height: 100%; margin: 0; background: #f4f5f7; }
+  body { display: flex; flex-direction: column; height: 100dvh; }
+  #app { flex: 1; min-height: 0; }
+  #linkbar {
+    display: flex; align-items: center; gap: 8px; padding: 8px 10px 8px 12px;
+    background: #e7f9ee; color: #0b6b37; border-bottom: 1px solid #c5ecd3;
+    font: 13px/1.4 system-ui, -apple-system, "Noto Sans Thai", "Thonburi", sans-serif;
+  }
+  #linkbar[hidden] { display: none; }
+  #linkbar span { flex: 1; }
+  #linkbar button { font: inherit; font-weight: 600; min-height: 34px; padding: 4px 12px; border-radius: 6px; border: 1px solid #06c755; background: #06c755; color: #fff; cursor: pointer; }
+  #linkbar button.x { background: transparent; border-color: transparent; color: inherit; padding: 4px 8px; }
+  @media (prefers-color-scheme: dark) {
+    html, body { background: #131518; }
+    #linkbar { background: #10321f; color: #8fe0b0; border-bottom-color: #1c4a30; }
+  }
+</style>
+<script>
+/* ============================================================
+   SIDECAR — หน้าทีมงาน (มือถือ / LIFF)
+   ------------------------------------------------------------
+   SIDECAR_API_URL : URL ของ Sidecar API
+                     เช่น https://<project-ref>.supabase.co/functions/v1/sidecar
+                     เว้นว่างได้ — หน้าเว็บจะถามครั้งแรกแล้วจำไว้ในเครื่อง
+   STAFF_LIFF_ID   : LIFF ID ของ LIFF app ที่ชี้มาที่หน้านี้ (ไม่บังคับ)
+                     ถ้าใส่ ทีมงานที่ผูกบัญชี LINE แล้วจะเข้าได้โดยไม่ต้องใส่ token
+   ⚠️ ห้ามวาง staff token / Channel Secret / API key ในไฟล์นี้
+   ============================================================ */
+window.SIDECAR_CONFIG = {
+  SIDECAR_API_URL: '',
+  STAFF_LIFF_ID: '',
+};
+</script>
+</head>
+<body>
+<div id="linkbar" hidden>
+  <span>ผูกบัญชี LINE นี้ เพื่อเปิดครั้งหน้าได้โดยไม่ต้องใส่ token</span>
+  <button type="button" id="linkbtn">ผูกบัญชี LINE นี้</button>
+  <button type="button" class="x" id="linkclose" aria-label="ปิด">✕</button>
+</div>
+<div id="app"></div>
+<noscript>หน้านี้ต้องเปิด JavaScript</noscript>
+<script src="extension/ui/app.js"></script>
+<script>
+(async function () {
+  'use strict';
+  var CFG = window.SIDECAR_CONFIG || {};
+  var LIFF_SDK = 'https://static.line-scdn.net/liff/edge/2/sdk.js';
+  var store = SidecarUI.localStore;
+  var presetUrl = String(CFG.SIDECAR_API_URL || '').trim();
+  var liffId = String(CFG.STAFF_LIFF_ID || '').trim();
+
+  var saved = await store.get(['sidecarApiUrl', 'sidecarToken', 'sidecarLineLinked']);
+  var api = SidecarUI.createApi({ baseUrl: presetUrl || saved.sidecarApiUrl || '', token: saved.sidecarToken || '' });
+  var lineReady = false;
+
+  function loadScript(src) {
+    return new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = src;
+      s.onload = resolve;
+      s.onerror = function () { reject(new Error('โหลด LIFF SDK ไม่ได้')); };
+      document.head.append(s);
+    });
+  }
+
+  // The LIFF SDK is fetched only when a LIFF ID is configured.
+  if (liffId) {
+    try {
+      await loadScript(LIFF_SDK);
+      await liff.init({ liffId: liffId });
+      if (liff.isLoggedIn()) {
+        api.setConfig({ idToken: liff.getIDToken() || '' });
+        lineReady = !!api.getConfig().idToken;
+      } else if (liff.isInClient()) {
+        liff.login();
+        return;
+      }
+    } catch (err) {
+      console.warn('LIFF init failed:', err && err.message);
+    }
+  }
+
+  var linkbar = document.getElementById('linkbar');
+  async function linkLine() {
+    if (!api.getConfig().token) throw new Error('ใส่ staff token ก่อน แล้วจึงผูกบัญชี LINE');
+    await api.post('/api/staff/link-line', {}, { withIdToken: true });
+    await store.set({ sidecarLineLinked: true });
+    linkbar.hidden = true;
+  }
+  function offerLink() {
+    linkbar.hidden = !(lineReady && api.getConfig().token && !saved.sidecarLineLinked);
+  }
+
+  var host = {
+    copy: SidecarUI.copyText,
+    config: { apiUrlEditable: !presetUrl },
+    saveConfig: async function (c) {
+      await store.set({ sidecarApiUrl: presetUrl ? null : c.apiUrl, sidecarToken: c.token || null });
+      offerLink();
+    },
+  };
+  if (liffId && window.liff) {
+    host.relogin = function () {
+      try { if (liff.isLoggedIn()) liff.logout(); } catch (_) {}
+      liff.login({ redirectUri: location.href });
+    };
+  }
+  if (lineReady) host.linkLine = linkLine;
+
+  document.getElementById('linkbtn').addEventListener('click', async function (e) {
+    e.currentTarget.disabled = true;
+    try {
+      await linkLine();
+    } catch (err) {
+      alert('ผูกบัญชี LINE ไม่สำเร็จ: ' + err.message);
+      e.currentTarget.disabled = false;
+    }
+  });
+  document.getElementById('linkclose').addEventListener('click', function () {
+    saved.sidecarLineLinked = true; // dismissed for this visit
+    linkbar.hidden = true;
+  });
+
+  SidecarUI.mount(document.getElementById('app'), { api: api, mode: 'inbox', host: host });
+  offerLink();
+})();
+</script>
+</body>
+</html>
