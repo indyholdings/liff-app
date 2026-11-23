@@ -2,13 +2,18 @@
 // ./src and is the only file that imports from npm.
 //
 // Secrets (Supabase dashboard → Edge Functions → Secrets):
-//   LINE_CHANNEL_SECRET, LINE_CHANNEL_ACCESS_TOKEN   Messaging API channel
-//   ANTHROPIC_API_KEY                                Claude API
-//   SIDECAR_ADMIN_KEY                                any long random string; mints staff tokens
+//   SIDECAR_LINE_CHANNEL_SECRET, SIDECAR_LINE_CHANNEL_ACCESS_TOKEN   Messaging API channel of the sales OA
+//   ANTHROPIC_API_KEY                                                Claude API
+//   SIDECAR_ADMIN_KEY                                                any long random string; mints staff tokens
 // Optional:
-//   LIFF_CHANNEL_ID   LINE Login channel id, lets staff sign in from the LIFF page
-//   SIDECAR_MODEL     defaults to claude-opus-5-5
-//   DEBOUNCE_MS       defaults to 8000
+//   SIDECAR_LIFF_CHANNEL_ID   LINE Login channel id, lets staff sign in from the LIFF page
+//   SIDECAR_MODEL             defaults to claude-opus-5-5
+//   SIDECAR_DEBOUNCE_MS       defaults to 8000
+//
+// Function secrets are shared by every function in the project, and this project's
+// `line-webhook` / `line-send` functions already use LINE_CHANNEL_SECRET and
+// LINE_CHANNEL_ACCESS_TOKEN for another LINE channel. Sidecar therefore reads its own
+// names and never falls back to those, so connecting it cannot repoint or break them.
 // SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY and SUPABASE_DB_URL are provided by Supabase.
 
 import postgres from "npm:postgres@3.4.5";
@@ -23,7 +28,7 @@ declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void } | unde
 
 const env = (name: string): string => Deno.env.get(name) ?? "";
 
-const REQUIRED = ["LINE_CHANNEL_SECRET", "LINE_CHANNEL_ACCESS_TOKEN", "ANTHROPIC_API_KEY", "SIDECAR_ADMIN_KEY"];
+const REQUIRED = ["SIDECAR_LINE_CHANNEL_SECRET", "SIDECAR_LINE_CHANNEL_ACCESS_TOKEN", "ANTHROPIC_API_KEY", "SIDECAR_ADMIN_KEY"];
 const missing = REQUIRED.filter((name) => !env(name));
 
 const BUCKET = "sidecar-media";
@@ -59,7 +64,7 @@ const storage: Deps["storage"] = {
   },
 };
 
-const lineHeaders = () => ({ Authorization: `Bearer ${env("LINE_CHANNEL_ACCESS_TOKEN")}` });
+const lineHeaders = () => ({ Authorization: `Bearer ${env("SIDECAR_LINE_CHANNEL_ACCESS_TOKEN")}` });
 
 const line: Deps["line"] = {
   async getProfile(userId) {
@@ -80,7 +85,7 @@ const line: Deps["line"] = {
     };
   },
   async verifyIdToken(idToken) {
-    const clientId = env("LIFF_CHANNEL_ID");
+    const clientId = env("SIDECAR_LIFF_CHANNEL_ID");
     if (!clientId) return null;
     const res = await fetch("https://api.line.me/oauth2/v2.1/verify", {
       method: "POST",
@@ -109,11 +114,11 @@ const brain: Brain = env("ANTHROPIC_API_KEY")
 const deps: Deps = {
   db,
   env: {
-    LINE_CHANNEL_SECRET: env("LINE_CHANNEL_SECRET"),
-    LINE_CHANNEL_ACCESS_TOKEN: env("LINE_CHANNEL_ACCESS_TOKEN"),
+    LINE_CHANNEL_SECRET: env("SIDECAR_LINE_CHANNEL_SECRET"),
+    LINE_CHANNEL_ACCESS_TOKEN: env("SIDECAR_LINE_CHANNEL_ACCESS_TOKEN"),
     SIDECAR_ADMIN_KEY: env("SIDECAR_ADMIN_KEY"),
-    LIFF_CHANNEL_ID: env("LIFF_CHANNEL_ID") || undefined,
-    DEBOUNCE_MS: env("DEBOUNCE_MS") || undefined,
+    LIFF_CHANNEL_ID: env("SIDECAR_LIFF_CHANNEL_ID") || undefined,
+    DEBOUNCE_MS: env("SIDECAR_DEBOUNCE_MS") || undefined,
   },
   line,
   storage,

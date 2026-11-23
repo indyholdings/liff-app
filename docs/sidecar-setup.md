@@ -14,12 +14,15 @@ Supabase Dashboard → Edge Functions → Secrets
 
 | ชื่อ | ค่า |
 |---|---|
-| `LINE_CHANNEL_SECRET` | LINE Developers Console → Messaging API channel → Basic settings |
-| `LINE_CHANNEL_ACCESS_TOKEN` | channel เดียวกัน → Messaging API → Channel access token (long-lived) |
-| `ANTHROPIC_API_KEY` | console.anthropic.com |
+| `SIDECAR_LINE_CHANNEL_SECRET` | LINE Developers Console → Messaging API channel ของ OA ฝั่งขาย → Basic settings |
+| `SIDECAR_LINE_CHANNEL_ACCESS_TOKEN` | channel เดียวกัน → Messaging API → Channel access token (long-lived) |
+| `ANTHROPIC_API_KEY` | console.anthropic.com (ถ้า project มีอยู่แล้วใช้ตัวเดิมได้) |
 | `SIDECAR_ADMIN_KEY` | ตั้งเองเป็นสตริงสุ่มยาว ๆ ใช้ออก token ให้พนักงาน |
-| `LIFF_CHANNEL_ID` (ไม่บังคับ) | LINE Login channel id ถ้าจะให้พนักงานเข้าหน้ามือถือด้วยบัญชี LINE |
+| `SIDECAR_LIFF_CHANNEL_ID` (ไม่บังคับ) | LINE Login channel id ถ้าจะให้พนักงานเข้าหน้ามือถือด้วยบัญชี LINE |
 | `SIDECAR_MODEL` (ไม่บังคับ) | ค่าเริ่มต้น `claude-opus-5-5`; ใส่ `claude-haiku-5-5` ถ้าต้องการลดต้นทุน |
+
+**ห้ามแก้ `LINE_CHANNEL_SECRET` และ `LINE_CHANNEL_ACCESS_TOKEN` ที่มีอยู่เดิม** สองค่านั้นเป็นของ
+function `line-webhook` / `line-send` (บัญชีแจ้งเตือนยอด JAIFU ONE) Sidecar ใช้ชื่อที่ขึ้นต้นด้วย `SIDECAR_` แยกต่างหาก
 
 ตรวจผล: เปิด `<API>/health` ต้องได้ `"configured": true`
 
@@ -28,6 +31,9 @@ Supabase Dashboard → Edge Functions → Secrets
 1. LINE Developers Console → Messaging API → Webhook URL = `<API>/webhook` → Verify → เปิด Use webhook
 2. LINE OA Manager → ตั้งค่า → การตอบกลับ: เปิดทั้ง **แชท** และ **Webhook**
    (สองอย่างนี้เปิดพร้อมกันได้ แอดมินยังตอบในแชทตามปกติ)
+
+LINE channel หนึ่งตั้ง Webhook URL ได้ค่าเดียว **อย่าชี้ OA ที่ใช้ `line-webhook` อยู่ (บัญชีแจ้งเตือนยอด JAIFU ONE)
+มาที่ Sidecar** เพราะระบบเชื่อมบัญชีด้วยรหัส 6 หลักและ "แจ้งโอน" จะหยุดทำงาน ให้ต่อ Sidecar กับ OA ฝั่งขายที่แอดมินคุยกับลูกค้า
 
 ## 3. ออก token ให้พนักงาน
 
@@ -48,7 +54,7 @@ token แสดงครั้งเดียว ระบบเก็บเฉ�
 ## 5. หน้ามือถือ
 
 เปิด `staff.html` (อยู่ที่เดียวกับเว็บนี้) ใส่ API URL และ token ครั้งแรกครั้งเดียว
-ถ้าตั้ง `STAFF_LIFF_ID` ในไฟล์และ `LIFF_CHANNEL_ID` ใน secret พนักงานผูกบัญชี LINE แล้วเข้าได้โดยไม่ต้องใส่ token อีก
+ถ้าตั้ง `STAFF_LIFF_ID` ในไฟล์และ `SIDECAR_LIFF_CHANNEL_ID` ใน secret พนักงานผูกบัญชี LINE แล้วเข้าได้โดยไม่ต้องใส่ token อีก
 
 ## 6. ตั้งค่าร้าน
 
