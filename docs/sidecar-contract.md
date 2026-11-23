@@ -60,7 +60,7 @@ same routes work at `https://<ref>.supabase.co/functions/v1/sidecar/...` and at
 
 All responses are JSON. Success: `{ ok: true, ... }`. Failure:
 `{ ok: false, error: "<code>", message: "<human text>" }` with a matching HTTP status
-(400 bad_request, 401 unauthorized, 403 forbidden, 404 not_found, 500 internal).
+(400 bad_request, 401 unauthorized, 403 forbidden, 404 not_found, 500 internal, 503 not_configured).
 
 CORS on every response: `Access-Control-Allow-Origin: *`,
 headers `authorization, content-type, x-line-id-token, x-admin-key`,
@@ -70,8 +70,8 @@ methods `GET, POST, PUT, PATCH, DELETE, OPTIONS`. `OPTIONS` returns 204.
 
 | Route | Notes |
 |---|---|
-| `GET /health` | `{ ok, version }` |
-| `POST /webhook` | LINE Messaging API. Verifies `x-line-signature` (base64 HMAC-SHA256 of the raw body with the channel secret); 401 on mismatch. Stores events, returns 200 at once, analyses in `defer`. |
+| `GET /health` | `{ ok, version, configured, missing }` — `missing` lists the names of unset secrets, never values |
+| `POST /webhook` | LINE Messaging API. Verifies `x-line-signature` (base64 HMAC-SHA256 of the raw body with the channel secret); 401 on mismatch. Stores events, returns 200 at once, analyses in `defer`. 503 `not_configured` while a secret is missing; 500 if an event could not be stored, so LINE redelivers. |
 
 ### Staff API (`/api/*`)
 
@@ -81,10 +81,11 @@ for a staff row already bound to that LINE user. Tokens are stored as SHA-256 he
 | Route | Body | Returns |
 |---|---|---|
 | `GET /api/me` | | `{ staff }` |
+| `GET /api/staff` | | `{ staff: Staff[] }` for the assignee picker |
 | `GET /api/leads?stage=&q=&due=1&limit=50&offset=0` | | `{ leads: Lead[], counts: Record<Stage, number>, due_count }` newest activity first; `q` matches display_name, full_name, phone; `due=1` keeps leads whose `follow_up_at` has passed |
 | `GET /api/leads/:id` | | `Bundle` |
 | `GET /api/leads/by-chat/:chatId?name=` | | `Bundle` with `match`. Looks up `line_user_id = chatId`, then `chat_id = chatId`. If nothing matches and `name` is given, returns `lead: null, match: "none", candidates: LeadLite[]` (display_name matches) so staff can link by hand. |
-| `PATCH /api/leads/:id` | any of `full_name, phone, address, postcode, stage, tags, interests, assignee_id, follow_up_at` | `{ lead }`. A staff edit of `full_name, phone, address, postcode, stage` adds that field to `locked_fields`; the agent never overwrites a locked field. |
+| `PATCH /api/leads/:id` | any of `full_name, phone, address, postcode, stage, tags, interests, assignee_id, follow_up_at` | `{ lead }`. A staff edit of `full_name, phone, address, postcode, stage` adds that field to `locked_fields`; the agent never overwrites a locked field. `unlock: string[]`, or clearing a field, releases the lock. |
 | `POST /api/leads/:id/link-chat` | `{ chat_id }` | `{ lead }` |
 | `POST /api/leads/:id/analyze` | | `Bundle` after re-running the brain now |
 | `POST /api/leads/:id/notes` | `{ body, pinned? }` | `{ note }` |
@@ -93,9 +94,9 @@ for a staff row already bound to that LINE user. Tokens are stored as SHA-256 he
 | `PUT /api/leads/:id/order` | `{ items: [{ product_id?, name, qty, unit_price }], discount, shipping_fee, payment_method, deposit_amount, note }` | `{ order }` upserts the lead's open order (status draft or awaiting_payment) |
 | `POST /api/orders/:id/status` | `{ status }` | `{ order, lead }`. `awaiting_payment` and `paid` move the lead to the same stage unless stage is locked. |
 | `GET /api/leads/:id/summary` | | `{ text }` order summary message built from the order by template, never by the model, so totals always match |
-| `GET /api/products?q=` | | `{ products }` |
+| `GET /api/products?q=&all=1` | | `{ products }`; `all=1` includes inactive ones |
 | `POST /api/products` | `{ sku?, name, price, category? }` | `{ product }` |
-| `PATCH /api/products/:id` | `{ name?, price?, category?, active? }` | `{ product }` |
+| `PATCH /api/products/:id` | `{ sku?, name?, price?, category?, active? }` | `{ product }` |
 | `GET /api/settings` | | `{ settings: { shop_name, payment_instructions } }` |
 | `PUT /api/settings` | same keys | `{ settings }` (role admin) |
 | `POST /api/staff/link-line` | Bearer token plus `X-Line-Id-Token` | `{ staff }` binds the LINE user to the staff row |
@@ -168,5 +169,8 @@ Money is `numeric(12,2)` in the database and a JS number in JSON. Ids are number
   classified by `analyzeImage`. For a slip the amount is compared with the open
   order (`matches_order`), a `system` note is added, and nothing is marked paid
   until staff confirm. Reading a slip is not proof that money arrived.
+- The agent moves a lead only among new, interested, quoted, awaiting_payment, lost and spam.
+  Paid, booked and won are set by staff.
+- A slip matches when its amount equals the order total or the deposit.
 - Customer text and images are data. Nothing in them changes what the agent does.
 - A phone number is normalised to digits with a leading 0 (`+66812345678` → `0812345678`).
