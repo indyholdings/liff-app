@@ -1,6 +1,6 @@
 // Shared shapes. Mirrors docs/sidecar-contract.md.
 
-export const VERSION = "0.1.0";
+export const VERSION = "0.2.0";
 
 export const STAGES = [
   "new", "interested", "quoted", "awaiting_payment", "paid", "booked", "won", "lost", "spam",
@@ -24,11 +24,35 @@ export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 // Identity fields a staff edit locks against the agent.
 export const LOCKABLE_FIELDS = ["full_name", "phone", "address", "postcode", "stage"] as const;
 
+// ---- profiles ----
+
+export type ProfileName = "retail" | "real_estate";
+
+// A profile-specific field on the lead card, stored in lead.details.
+export interface DetailField {
+  key: string; label: string; type: "text" | "select";
+  options?: { value: string; label: string }[]; placeholder?: string;
+}
+
+// What GET /api/config returns: how this deployment's kind of business names things.
+export interface ProfileConfig {
+  profile: ProfileName;
+  stages: { key: Stage; label: string }[];
+  detail_fields: DetailField[];
+  media_categories: { key: MediaCategory; label: string }[];
+  payment_methods: { key: PaymentMethod; label: string }[];
+  labels: {
+    product: string; products: string; order: string;
+    order_empty: string; product_search: string; summary_button: string;
+  };
+}
+
 export interface Lead {
   id: number; line_user_id: string; chat_id: string | null;
   display_name: string | null; picture_url: string | null;
   full_name: string | null; phone: string | null; address: string | null; postcode: string | null;
   stage: Stage; tags: string[]; interests: string[];
+  details: Record<string, string>;
   assignee_id: number | null; assignee_name: string | null;
   ai_summary: string | null; next_action: string | null; suggested_reply: string | null;
   follow_up_at: string | Date | null; locked_fields: string[];
@@ -76,12 +100,16 @@ export interface Settings { shop_name: string; payment_instructions: string; }
 // ---- brain ----
 
 export interface ConversationInput {
+  // Absent means retail. `detail_fields` are the profile's fields the brain may fill.
+  profile?: ProfileName;
+  detail_fields?: DetailField[];
   shop_name: string;
   products: { name: string; price: number; category: string | null }[];
   lead: {
     display_name: string | null; full_name: string | null; phone: string | null;
     address: string | null; postcode: string | null; stage: Stage;
     interests: string[]; ai_summary: string | null;
+    details?: Record<string, string>;
   };
   // Oldest first. `is_new` marks what arrived since the last analysis.
   messages: { direction: "in" | "out"; type: string; text: string | null; sent_at: string; is_new: boolean }[];
@@ -95,9 +123,11 @@ export interface Analysis {
   summary: string; next_action: string; suggested_reply: string;
   order_items: { name: string; qty: number; unit_price: number | null }[];
   follow_up_hours: number | null;
+  // Only in profiles that have detail fields.
+  details?: Record<string, string | null>;
 }
 
-export interface ImageInput { bytes: Uint8Array; contentType: string; shop_name: string; }
+export interface ImageInput { bytes: Uint8Array; contentType: string; shop_name: string; profile?: ProfileName; }
 
 export interface ImageAnalysis {
   category: MediaCategory; caption: string | null;
@@ -121,6 +151,10 @@ export interface Deps {
     SIDECAR_ADMIN_KEY: string;
     LIFF_CHANNEL_ID?: string;
     DEBOUNCE_MS?: string;
+    // "retail" (default) or "real_estate".
+    PROFILE?: string;
+    // Where verified webhook calls are relayed, when another system also needs them.
+    FORWARD_WEBHOOK_URL?: string;
   };
   line: {
     getProfile(userId: string): Promise<{ displayName: string; pictureUrl?: string } | null>;
@@ -135,6 +169,8 @@ export interface Deps {
   defer(p: Promise<unknown>): void;
   now(): Date;
   sleep(ms: number): Promise<void>;
+  // Relays a verified webhook call unchanged. Set only when FORWARD_WEBHOOK_URL is.
+  forward?(rawBody: string, signature: string): Promise<void>;
   // Names of required secrets that are not set. Names only, never values.
   missing?: string[];
   log?(message: string, detail?: unknown): void;

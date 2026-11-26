@@ -4,6 +4,7 @@ import type { Deps } from "./types.ts";
 import { VERSION } from "./types.ts";
 import { handleApi } from "./api.ts";
 import { handleWebhook } from "./webhook.ts";
+import { getProfile } from "./profiles.ts";
 import { fail, HttpError, logError, ok, preflight } from "./util.ts";
 
 // The same routes work behind https://<ref>.supabase.co/functions/v1/sidecar and at the server root.
@@ -21,7 +22,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
 
     if (path === "/health" && req.method === "GET") {
       const missing = deps.missing ?? [];
-      return ok({ version: VERSION, configured: missing.length === 0, missing });
+      return ok({ version: VERSION, configured: missing.length === 0, missing, profile: getProfile(deps.env.PROFILE).profile });
     }
     if (path === "/webhook" && req.method === "POST") return await handleWebhook(req, deps);
     if (path === "/api" || path.startsWith("/api/")) return await handleApi(req, url, path, deps);

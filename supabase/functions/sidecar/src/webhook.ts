@@ -91,6 +91,7 @@ export async function handleWebhook(req: Request, deps: Deps): Promise<Response>
   if (!(await verifySignature(deps.env.LINE_CHANNEL_SECRET, rawBody, req.headers.get("x-line-signature")))) {
     return fail("unauthorized", "Invalid LINE signature");
   }
+  const signature = req.headers.get("x-line-signature") ?? "";
   let payload: { destination?: string; events?: LineEvent[] };
   try {
     payload = JSON.parse(rawBody);
@@ -105,6 +106,16 @@ export async function handleWebhook(req: Request, deps: Deps): Promise<Response>
       failed = true;
       logError(deps, "webhook event failed", err);
     }
+  }
+  // A LINE channel has one webhook URL, so another system that needs these events
+  // gets the call relayed unchanged. It goes out even when storing failed here:
+  // a problem in Sidecar must not silence the other system. If LINE then
+  // redelivers, the receiver sees the events again, marked as a redelivery.
+  const forward = deps.forward;
+  if (forward) {
+    deps.defer(
+      Promise.resolve().then(() => forward(rawBody, signature)).catch((err) => logError(deps, "webhook relay failed", err)),
+    );
   }
   // A non-2xx answer makes LINE redeliver; events already stored are skipped by id.
   return failed ? fail("internal", "Some events could not be stored") : ok();

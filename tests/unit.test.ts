@@ -5,7 +5,11 @@ import {
 } from "../supabase/functions/sidecar/src/util.ts";
 import { routePath } from "../supabase/functions/sidecar/src/router.ts";
 import { verifySignature } from "../supabase/functions/sidecar/src/webhook.ts";
-import { BrainError, CONVERSATION_SCHEMA, createBrain, IMAGE_SCHEMA } from "../supabase/functions/sidecar/src/brain.ts";
+import { createHash } from "node:crypto";
+import {
+  BrainError, CONVERSATION_SCHEMA, conversationSchemaWithDetails, createBrain, IMAGE_SCHEMA,
+} from "../supabase/functions/sidecar/src/brain.ts";
+import { defaultModel, getProfile } from "../supabase/functions/sidecar/src/profiles.ts";
 import type { ConversationInput } from "../supabase/functions/sidecar/src/types.ts";
 
 describe("util", () => {
@@ -173,5 +177,91 @@ describe("brain", () => {
     };
     check(CONVERSATION_SCHEMA, "conversation");
     check(IMAGE_SCHEMA, "image");
+    check(conversationSchemaWithDetails(getProfile("real_estate").detail_fields), "conversation+details");
+  });
+});
+
+describe("brain per profile", () => {
+  const estate = getProfile("real_estate");
+  const estateInput: ConversationInput = {
+    ...input,
+    profile: "real_estate",
+    detail_fields: estate.detail_fields,
+    shop_name: "Globallink Estate",
+    products: [{ name: "Kave Town Colony · Studio 23 ตร.ม.", price: 11000, category: "เช่า" }],
+    lead: { ...input.lead, details: { intent: "rent" } },
+    messages: [{ direction: "in", type: "text", text: "หาห้องเช่าใกล้ ม.กรุงเทพ งบ 12,000", sent_at: "2026-11-26T03:00:00.000Z", is_new: true }],
+  };
+  const estateAnalysis = {
+    ...goodAnalysis, phone: null, interests: ["Kave Town Colony"], order_items: [],
+    details: { role: "tenant", intent: "rent", budget: " 12,000/เดือน ", location: "ใกล้ ม.กรุงเทพ", unit_type: null, move_in: null, property_code: "" },
+  };
+
+  it("keeps the retail request exactly as it was before profiles", async () => {
+    // Pinned from the request the code sent before profiles existed. If this
+    // fails, the retail prompt, schema or request shape changed.
+    const answer = textResponse({ ...goodAnalysis, phone: null, interests: [], stage: "new", summary: "x", next_action: "", suggested_reply: "", order_items: [], follow_up_hours: null });
+    const image = textResponse({ category: "other", caption: null, slip: null });
+    for (const extra of [{}, { profile: "retail" as const, detail_fields: [], lead: { ...input.lead, details: {} } }]) {
+      const calls: any[] = [];
+      const client = { beta: { messages: { create: async (p: any) => { calls.push(p); return calls.length === 1 ? answer : image; } } } };
+      const brain = createBrain(client);
+      await brain.analyzeConversation({ ...input, ...extra });
+      await brain.analyzeImage({ bytes: new Uint8Array([1, 2]), contentType: "image/png", shop_name: "JAIFU", ...("profile" in extra ? { profile: "retail" as const } : {}) });
+      assert.equal(
+        createHash("sha256").update(JSON.stringify(calls)).digest("hex"),
+        "c6b0cb4f8bdc42271c058422257026c28740cfc48d1bf53481c269f9e7db9dfa",
+      );
+    }
+  });
+
+  it("sends the property-agency prompt and a details schema for real_estate", async () => {
+    const { client, calls } = stubClient(textResponse(estateAnalysis));
+    const result = await createBrain(client, { model: defaultModel("real_estate") }).analyzeConversation(estateInput);
+    const p = calls[0];
+    assert.equal(p.model, "claude-haiku-5-5");
+    assert.ok(!("fallbacks" in p) && !("betas" in p) && !("thinking" in p) && !("temperature" in p));
+    assert.equal(p.output_config.effort, "low");
+    const schema = p.output_config.format.schema;
+    assert.notEqual(schema, CONVERSATION_SCHEMA);
+    assert.ok(schema.required.includes("details"));
+    assert.deepEqual(schema.properties.details.required, ["role", "intent", "budget", "location", "unit_type", "move_in", "property_code"]);
+    assert.deepEqual(schema.properties.details.properties.intent.anyOf[0].enum, ["list_sale", "list_rent", "buy", "rent", "after_sales", "service"]);
+    assert.deepEqual(schema.properties.details.properties.budget, { anyOf: [{ type: "string" }, { type: "null" }] });
+    assert.ok(!("details" in CONVERSATION_SCHEMA.properties), "the retail schema is not touched");
+
+    const system = p.system[0].text;
+    assert.match(system, /property agency/);
+    assert.match(system, /Globallink Estate/);
+    assert.match(system, /role: .*One of: owner \(เจ้าของทรัพย์\), buyer \(ผู้ซื้อ\), tenant \(ผู้เช่า\), co_agent \(Co-agent\), resident \(ลูกบ้าน\)\./);
+    assert.match(system, /an officer will check and confirm/);
+    assert.match(system, /Kave Town Colony · Studio 23 ตร.ม. \| 11000 THB \| เช่า/);
+    assert.doesNotMatch(system, /2026-11-26/, "nothing volatile in the cached prefix");
+    assert.equal(p.system[0].cache_control.type, "ephemeral");
+    assert.match(p.messages[0].content, /"details": \{\n\s+"intent": "rent"\n\s+\}/, "the card shows what is already known");
+
+    assert.deepEqual(result.details, {
+      role: "tenant", intent: "rent", budget: "12,000/เดือน", location: "ใกล้ ม.กรุงเทพ",
+      unit_type: null, move_in: null, property_code: null,
+    });
+  });
+
+  it("uses the property image prompt only for real_estate", async () => {
+    const answer = textResponse({ category: "product", caption: "รูปห้อง", slip: null });
+    const a = stubClient(answer);
+    await createBrain(a.client).analyzeImage({ bytes: new Uint8Array([1]), contentType: "image/png", shop_name: "", profile: "real_estate" });
+    assert.match(a.calls[0].system[0].text, /property agency/);
+    assert.equal(a.calls[0].output_config.format.schema, IMAGE_SCHEMA);
+    const b = stubClient(answer);
+    await createBrain(b.client).analyzeImage({ bytes: new Uint8Array([1]), contentType: "image/png", shop_name: "" });
+    assert.doesNotMatch(b.calls[0].system[0].text, /property agency/);
+  });
+
+  it("picks the model by profile and falls back to retail for unknown names", () => {
+    assert.equal(defaultModel(undefined), "claude-opus-5-5");
+    assert.equal(defaultModel("retail"), "claude-opus-5-5");
+    assert.equal(defaultModel("real_estate"), "claude-haiku-5-5");
+    assert.equal(getProfile("nope").profile, "retail");
+    assert.equal(getProfile(undefined).profile, "retail");
   });
 });

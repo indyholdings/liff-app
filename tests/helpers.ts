@@ -1,7 +1,7 @@
 // Test harness: the real router and SQL on an in-process Postgres (PGlite),
 // with LINE, storage and the model replaced by fakes.
 
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { PGlite } from "@electric-sql/pglite";
 import { handle } from "../supabase/functions/sidecar/src/router.ts";
 import { hmacSha256Base64, sha256Hex } from "../supabase/functions/sidecar/src/util.ts";
@@ -9,9 +9,14 @@ import type {
   Analysis, ConversationInput, Deps, ImageAnalysis, ImageInput,
 } from "../supabase/functions/sidecar/src/types.ts";
 
-export const MIGRATION = readFileSync(
-  new URL("../supabase/migrations/20261123000000_sidecar.sql", import.meta.url), "utf8",
-);
+// Every migration, in order. The storage bucket one is left out: it needs
+// Supabase's storage schema, which a bare Postgres does not have.
+const MIGRATIONS_DIR = new URL("../supabase/migrations/", import.meta.url);
+export const MIGRATION = readdirSync(MIGRATIONS_DIR)
+  .filter((name) => name.endsWith(".sql") && !name.includes("bucket"))
+  .sort()
+  .map((name) => readFileSync(new URL(name, MIGRATIONS_DIR), "utf8"))
+  .join("\n");
 
 export const SECRET = "test-channel-secret";
 export const ADMIN_KEY = "test-admin-key";

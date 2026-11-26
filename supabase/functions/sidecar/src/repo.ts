@@ -18,7 +18,7 @@ import { round2 } from "./util.ts";
 const LEAD_COLS = `
   l.id, l.line_user_id, l.chat_id, l.display_name, l.picture_url,
   l.full_name, l.phone, l.address, l.postcode, l.stage,
-  to_jsonb(l.tags) as tags, to_jsonb(l.interests) as interests,
+  to_jsonb(l.tags) as tags, to_jsonb(l.interests) as interests, l.details,
   l.assignee_id, s.name as assignee_name,
   l.ai_summary, l.next_action, l.suggested_reply, l.follow_up_at,
   to_jsonb(l.locked_fields) as locked_fields,
@@ -146,6 +146,7 @@ const TEXT_COLUMNS = new Set([
 ]);
 const ARRAY_COLUMNS = new Set(["tags", "interests", "locked_fields"]);
 const TIME_COLUMNS = new Set(["follow_up_at", "last_message_at", "processing_at"]);
+const JSON_COLUMNS = new Set(["details"]);
 
 // Partial update. Keys outside the whitelists are ignored.
 export async function updateLead(db: Db, id: number, patch: Record<string, unknown>, now: Date): Promise<void> {
@@ -156,6 +157,7 @@ export async function updateLead(db: Db, id: number, patch: Record<string, unkno
     if (TEXT_COLUMNS.has(key)) { params.push(value); sets.push(`${key} = $${params.length}`); }
     else if (ARRAY_COLUMNS.has(key)) { params.push(JSON.stringify(value ?? [])); sets.push(`${key} = ${TEXT_ARRAY(params.length)}`); }
     else if (TIME_COLUMNS.has(key)) { params.push(value); sets.push(`${key} = $${params.length}::timestamptz`); }
+    else if (JSON_COLUMNS.has(key)) { params.push(JSON.stringify(value ?? {})); sets.push(`${key} = $${params.length}::text::jsonb`); }
     else if (key === "assignee_id") { params.push(value); sets.push(`assignee_id = $${params.length}`); }
   }
   if (!sets.length) return;

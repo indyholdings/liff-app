@@ -6,9 +6,12 @@
 //   ANTHROPIC_API_KEY                                                Claude API
 //   SIDECAR_ADMIN_KEY                                                any long random string; mints staff tokens
 // Optional:
-//   SIDECAR_LIFF_CHANNEL_ID   LINE Login channel id, lets staff sign in from the LIFF page
-//   SIDECAR_MODEL             defaults to claude-opus-5-5
-//   SIDECAR_DEBOUNCE_MS       defaults to 8000
+//   SIDECAR_PROFILE               "retail" (default) or "real_estate": stage names, card fields, prompts
+//   SIDECAR_LIFF_CHANNEL_ID       LINE Login channel id, lets staff sign in from the LIFF page
+//   SIDECAR_MODEL                 defaults to the profile's model (retail claude-opus-5-5, real_estate claude-haiku-5-5)
+//   SIDECAR_DEBOUNCE_MS           defaults to 8000
+//   SIDECAR_FORWARD_WEBHOOK_URL   https URL that every verified webhook call is relayed to, unchanged,
+//                                 for a second system on the same LINE channel (one channel, one webhook URL)
 //
 // Function secrets are shared by every function in the project, and this project's
 // `line-webhook` / `line-send` functions already use LINE_CHANNEL_SECRET and
@@ -22,6 +25,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 
 import { handle } from "./src/router.ts";
 import { BrainError, createBrain } from "./src/brain.ts";
+import { defaultModel } from "./src/profiles.ts";
 import type { Brain, Deps } from "./src/types.ts";
 
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void } | undefined;
@@ -107,9 +111,36 @@ const brain: Brain = env("ANTHROPIC_API_KEY")
     // The card is filled in the background, so a slow call only delays it; cap it
     // well inside the edge function's background-task window.
     new Anthropic({ apiKey: env("ANTHROPIC_API_KEY"), timeout: 60_000, maxRetries: 2 }),
-    { model: env("SIDECAR_MODEL") || undefined },
+    { model: env("SIDECAR_MODEL") || defaultModel(env("SIDECAR_PROFILE")) },
   )
   : { analyzeConversation: notConfigured, analyzeImage: notConfigured };
+
+// Relays a verified LINE webhook call to a second system, byte for byte, so the
+// receiver can check the same signature. Only https targets are accepted.
+function forwardUrl(): string | null {
+  try {
+    const url = new URL(env("SIDECAR_FORWARD_WEBHOOK_URL"));
+    return url.protocol === "https:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+const relayTo = forwardUrl();
+if (env("SIDECAR_FORWARD_WEBHOOK_URL") && !relayTo) {
+  console.error("[sidecar] SIDECAR_FORWARD_WEBHOOK_URL is not an https URL; relaying is off");
+}
+
+const forward: Deps["forward"] = relayTo
+  ? async (rawBody, signature) => {
+    const res = await fetch(relayTo, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-line-signature": signature },
+      body: rawBody,
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) throw new Error(`Relay answered HTTP ${res.status}`);
+  }
+  : undefined;
 
 const deps: Deps = {
   db,
@@ -119,7 +150,10 @@ const deps: Deps = {
     SIDECAR_ADMIN_KEY: env("SIDECAR_ADMIN_KEY"),
     LIFF_CHANNEL_ID: env("SIDECAR_LIFF_CHANNEL_ID") || undefined,
     DEBOUNCE_MS: env("SIDECAR_DEBOUNCE_MS") || undefined,
+    PROFILE: env("SIDECAR_PROFILE") || undefined,
+    FORWARD_WEBHOOK_URL: relayTo ?? undefined,
   },
+  forward,
   line,
   storage,
   brain,

@@ -8,6 +8,7 @@ import {
 import * as repo from "./repo.ts";
 import { analyseLead } from "./agent.ts";
 import { buildOrderSummary } from "./summary.ts";
+import { cleanDetail, getProfile } from "./profiles.ts";
 import {
   badRequest, cleanText, HttpError, isoOrNull, normalizePhone, notFound, ok, randomToken,
   round2, sha256Hex, timingSafeEqual, uniqueStrings,
@@ -99,6 +100,8 @@ const emptyBundle = (candidates: unknown[]) => ({
 
 const me: Handler = async ({ staff }) => ok({ staff });
 
+const config: Handler = async ({ deps }) => ok({ config: getProfile(deps.env.PROFILE) });
+
 const staffList: Handler = async ({ deps }) => ok({ staff: await repo.listStaff(deps.db) });
 
 const leadsList: Handler = async ({ url, deps }) => {
@@ -172,6 +175,32 @@ const leadPatch: Handler = async ({ deps, params, body }) => {
       if (!when) throw badRequest("follow_up_at must be a date");
       patch.follow_up_at = when;
     }
+  }
+
+  // Profile fields: keys are merged, an empty value removes the key. The same
+  // lock rule applies, under the name details.<key>.
+  if (body.details !== undefined) {
+    if (!body.details || typeof body.details !== "object" || Array.isArray(body.details)) {
+      throw badRequest("details must be an object");
+    }
+    const fields = new Map(getProfile(deps.env.PROFILE).detail_fields.map((f) => [f.key, f]));
+    const details = { ...(lead.details ?? {}) };
+    for (const [key, raw] of Object.entries(body.details as Record<string, unknown>)) {
+      const field = fields.get(key);
+      if (!field) throw badRequest(`Unknown detail: ${key}`);
+      if (raw === null || (typeof raw === "string" && !raw.trim())) {
+        delete details[key];
+        locked.delete(`details.${key}`);
+        continue;
+      }
+      const value = cleanDetail(field, raw);
+      if (!value) {
+        throw badRequest(field.type === "select" ? `details.${key} is not one of the listed values` : `details.${key} must be text`);
+      }
+      details[key] = value;
+      locked.add(`details.${key}`);
+    }
+    patch.details = details;
   }
 
   // A staff edit wins over the agent from now on. Clearing a field hands it back.
@@ -272,7 +301,8 @@ const leadSummary: Handler = async ({ deps, params }) => {
   const lead = await requireLead(deps, intParam(params[0]));
   const order = await repo.currentOrder(deps.db, lead.id);
   if (!order || !order.items.length) throw notFound("This lead has no order yet");
-  return ok({ text: buildOrderSummary(order, lead, await repo.getSettings(deps.db)) });
+  const profile = getProfile(deps.env.PROFILE).profile;
+  return ok({ text: buildOrderSummary(order, lead, await repo.getSettings(deps.db), profile) });
 };
 
 const productsList: Handler = async ({ url, deps }) =>
@@ -349,6 +379,7 @@ async function adminCreateStaff(req: Request, deps: Deps): Promise<Response> {
 
 const ROUTES: [string, RegExp, Handler][] = [
   ["GET", /^\/api\/me$/, me],
+  ["GET", /^\/api\/config$/, config],
   ["GET", /^\/api\/staff$/, staffList],
   ["POST", /^\/api\/staff\/link-line$/, staffLinkLine],
   ["GET", /^\/api\/leads$/, leadsList],

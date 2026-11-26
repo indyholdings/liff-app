@@ -5,6 +5,7 @@
 import type { Analysis, ConversationInput, Deps, Lead, SlipInfo, Stage } from "./types.ts";
 import { AGENT_STAGES } from "./types.ts";
 import * as repo from "./repo.ts";
+import { cleanDetail, getProfile } from "./profiles.ts";
 import { cleanText, formatMoney, isoOrNull, logError, normalizePhone, uniqueStrings } from "./util.ts";
 
 const CLAIM_RETRY_MS = 3000;
@@ -62,13 +63,16 @@ export async function analyseLead(deps: Deps, leadId: number): Promise<void> {
   if (!messages.length) return;
   const [products, settings] = await Promise.all([repo.listProducts(deps.db), repo.getSettings(deps.db)]);
 
+  const profile = getProfile(deps.env.PROFILE);
   const input: ConversationInput = {
+    profile: profile.profile,
+    detail_fields: profile.detail_fields,
     shop_name: settings.shop_name,
     products: products.map((p) => ({ name: p.name, price: p.price, category: p.category })),
     lead: {
       display_name: lead.display_name, full_name: lead.full_name, phone: lead.phone,
       address: lead.address, postcode: lead.postcode, stage: lead.stage,
-      interests: lead.interests, ai_summary: lead.ai_summary,
+      interests: lead.interests, ai_summary: lead.ai_summary, details: lead.details ?? {},
     },
     messages: messages.map((m) => ({
       direction: m.direction, type: m.type, text: describeForBrain(m),
@@ -101,6 +105,18 @@ async function applyAnalysis(deps: Deps, lead: Lead, a: Analysis): Promise<void>
     const current = (lead as unknown as Record<string, unknown>)[field];
     if (value && !locked.has(field) && !current) patch[field] = value;
   }
+
+  // Profile fields follow the same rule: empty and unlocked only, and a select
+  // field takes nothing outside its list.
+  const details = { ...(lead.details ?? {}) };
+  let detailsChanged = false;
+  for (const field of getProfile(deps.env.PROFILE).detail_fields) {
+    const value = cleanDetail(field, a.details?.[field.key]);
+    if (!value || details[field.key] || locked.has(`details.${field.key}`)) continue;
+    details[field.key] = value;
+    detailsChanged = true;
+  }
+  if (detailsChanged) patch.details = details;
 
   const interests = uniqueStrings([...lead.interests, ...(a.interests ?? [])]);
   if (interests.join("|") !== lead.interests.join("|")) patch.interests = interests;
@@ -185,7 +201,9 @@ export async function processImage(
     }
 
     const settings = await repo.getSettings(deps.db);
-    const result = await deps.brain.analyzeImage({ bytes, contentType: type, shop_name: settings.shop_name });
+    const result = await deps.brain.analyzeImage({
+      bytes, contentType: type, shop_name: settings.shop_name, profile: getProfile(deps.env.PROFILE).profile,
+    });
 
     let slip: SlipInfo | null = null;
     if (result.category === "slip") {
@@ -201,11 +219,13 @@ export async function processImage(
         ref: result.slip?.ref ?? null, matches_order: matches,
       };
       const amountText = amount === null ? "อ่านยอดไม่ได้" : `ยอด ${formatMoney(amount)} บาท`;
+      // What the slip is compared with, in the profile's own word for it.
+      const noun = getProfile(deps.env.PROFILE).profile === "real_estate" ? "ข้อเสนอ" : "ออเดอร์";
       const verdict = matches === true
-        ? "ตรงกับยอดออเดอร์"
+        ? `ตรงกับยอด${noun}`
         : matches === false
-        ? `ไม่ตรงกับยอดออเดอร์ (${formatMoney(order!.total)} บาท)`
-        : order ? "เทียบยอดไม่ได้" : "ยังไม่มีออเดอร์ให้เทียบ";
+        ? `ไม่ตรงกับยอด${noun} (${formatMoney(order!.total)} บาท)`
+        : order ? "เทียบยอดไม่ได้" : `ยังไม่มี${noun}ให้เทียบ`;
       await repo.addNote(
         deps.db, leadId,
         `ลูกค้าส่งสลิป ${amountText} — ${verdict} รอแอดมินตรวจยอดเข้าและกดยืนยัน`,
