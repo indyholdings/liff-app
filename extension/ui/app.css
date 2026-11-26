@@ -738,3 +738,10 @@ html[data-theme="globallink"] body { background: #f5f2e9; }
   [data-theme="globallink"] .sc-menu-item svg { color: #9ddcae; }
   [data-theme="globallink"] .sc-kind-ai .sc-note-dot { background: #6fb383; }
 }
+
+/* added with app.js restructure */
+/* .sc-empty is also the empty-state block above (padding, centred, flex column). On a select
+   without a value only its colour and weight are meant, so the box is put back to the .sc-pinput
+   one. flex-direction matters too: Chromium lays a select out as a flex box, and a column there
+   pushes the text to the top of a taller (touch) field. */
+select.sc-pinput.sc-empty { display: block; flex-direction: row; gap: 0; padding: 5px 26px 5px 8px; text-align: start; }

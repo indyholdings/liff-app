@@ -23,8 +23,8 @@ const SHOTS = path.join(HERE, 'shots-gbl');
 fs.mkdirSync(SHOTS, { recursive: true });
 
 const FOREST = 'rgb(25, 62, 36)';
-const CORAL = 'rgb(221, 99, 58)';
 const IVORY = 'rgb(245, 242, 233)';
+const CLEAR = 'rgba(0, 0, 0, 0)';
 
 const problems = [];
 let step = 0;
@@ -57,6 +57,21 @@ async function assertNoOverflow(scope, label) {
   const o = await scope.locator('.sc-main').evaluate((el) => ({ sw: el.scrollWidth, cw: el.clientWidth }));
   assert(o.sw <= o.cw + 1, `${label}: content is ${o.sw}px wide in a ${o.cw}px column`);
 }
+
+/** A theme colour token as the browser resolves it, e.g. "rgb(25, 62, 36)". */
+const token = (scope, name) => scope.locator('.sc-root').evaluate((root, n) => {
+  const probe = document.createElement('i');
+  probe.style.color = 'var(' + n + ')';
+  root.append(probe);
+  const c = getComputedStyle(probe).color;
+  probe.remove();
+  return c;
+}, name);
+/** The lead tab panels that are in the layout right now. */
+const shownPanels = (scope) => scope.locator('.sc-panel').evaluateAll((els) => els.filter((el) => !el.hidden && el.getClientRects().length).map((el) => el.dataset.panel));
+/** Lets running CSS animations (panel fade, menu pop) finish, so a screenshot is not caught half-way. */
+const settle = (scope) => scope.locator('.sc-root').evaluate(() => Promise.all(document.getAnimations().filter((a) => a.effect && a.effect.getComputedTiming().iterations !== Infinity).map((a) => a.finished.catch(() => {}))));
+const stageMenuClosed = async (scope) => (await scope.locator('.sc-stage-menu').count()) === 0 && (await scope.locator('[data-stage]').count()) === 0;
 
 // ------------------------------------------------------------------ build + serve
 const built = spawnSync(process.execPath, ['scripts/build-brand.mjs', 'globallink'], { cwd: ROOT, encoding: 'utf8' });
@@ -127,23 +142,75 @@ try {
   assert(fonts.thai && fonts.latin && fonts.loaded >= 2, 'bundled Sarabun faces load for Thai and Latin (' + fonts.loaded + ' loaded)');
   log('Forest top bar with the ivory logo, Ivory page, Sarabun loaded from the build (' + fonts.loaded + ' faces in use)');
 
-  // one coral action in the view
-  const ctas = panel.locator('.sc-cta:visible');
-  assert(await ctas.count() === 1, 'exactly one coral action in the lead view (found ' + (await ctas.count()) + ')');
-  const cta = await ctas.first().evaluate((el) => ({ bg: getComputedStyle(el).backgroundColor, ink: getComputedStyle(el).color, sc: el.dataset.sc }));
-  assert(cta.bg === CORAL && cta.ink === 'rgb(11, 26, 16)', 'the main action is Coral with forest-black text (' + JSON.stringify(cta) + ')');
-  assert(cta.sc === 'reply-insert', 'the coral action is "insert the draft reply"');
-  const save = await panel.locator('[data-sc="note-add"]').evaluate((el) => getComputedStyle(el).backgroundColor);
-  assert(save === FOREST, 'section buttons are Forest, not Coral (' + save + ')');
-  log('Coral marks one action (insert the draft reply); section buttons are Forest');
+  // one primary action in the view; the accent colour is kept for markers, not for buttons
+  const primaryColor = await token(panel, '--primary');
+  const accentColor = await token(panel, '--accent');
+  assert(primaryColor !== accentColor, 'the theme keeps primary and accent apart (' + primaryColor + ' / ' + accentColor + ')');
+  const primaries = panel.locator('.sc-btn.sc-primary:visible');
+  assert(await primaries.count() === 1, 'exactly one primary button in the lead view (found ' + (await primaries.count()) + ')');
+  const main = await primaries.first().evaluate((el) => ({ bg: getComputedStyle(el).backgroundColor, ink: getComputedStyle(el).color, sc: el.dataset.sc }));
+  assert(main.bg === primaryColor && main.ink === await token(panel, '--primary-ink'), 'the main action is drawn in the primary colour (' + JSON.stringify(main) + ')');
+  assert(main.sc === 'reply-insert', 'the primary action is "insert the draft reply"');
+  const copyBg = await panel.locator('[data-sc="reply-copy"]').evaluate((el) => getComputedStyle(el).backgroundColor);
+  assert(copyBg !== primaryColor && copyBg !== accentColor, 'the button beside it is a quiet one (' + copyBg + ')');
+  const tabLine = await panel.locator('.sc-ltab.sc-on').evaluate((el) => getComputedStyle(el).borderBottomColor);
+  assert(tabLine === accentColor, 'the active tab is underlined in the accent colour (' + tabLine + ')');
+  assert(await panel.locator('.sc-cta').count() === 0, 'the old call-to-action class is gone');
+  log('one primary action (insert the draft reply); the accent marks the active tab');
 
   // ====================================================================== 3. profile: stages, requirement card
-  const stageOrder = await panel.locator('[data-sc="stages"] [data-stage]').evaluateAll((els) => els.map((el) => el.dataset.stage + ':' + el.textContent));
-  assert(stageOrder.join('|') === 'new:ใหม่|interested:รู้ความต้องการ|quoted:ส่งทรัพย์แล้ว|booked:นัดดูทรัพย์|awaiting_payment:รอมัดจำ|paid:วางมัดจำแล้ว|won:ปิดดีล|lost:หลุด|spam:สแปม',
-    'stage chips follow the real-estate profile (' + stageOrder.join('|') + ')');
-  assert(await panel.locator('[data-stage="booked"].sc-on').count() === 1, 'current stage is highlighted');
-  log('stage chips use the real-estate labels and order');
+  const pill = panel.locator('[data-sc="stage-toggle"]');
+  assert(await pill.getAttribute('data-stage-key') === 'booked' && (await pill.innerText()).includes('นัดดูทรัพย์'), 'stage pill shows the current stage with the profile label');
+  assert(await pill.getAttribute('aria-expanded') === 'false' && await stageMenuClosed(panel), 'stage menu starts closed, with no menu items in the DOM');
+  const pipe = await panel.locator('[data-sc="stages"] .sc-pipe').evaluate((el) => ({
+    steps: el.querySelectorAll('i').length, cur: el.querySelectorAll('i.sc-cur').length, done: el.querySelectorAll('i.sc-done').length,
+    curIndex: [...el.querySelectorAll('i')].findIndex((i) => i.classList.contains('sc-cur')), off: el.classList.contains('sc-off'),
+  }));
+  assert(pipe.steps === 7 && pipe.cur === 1, 'pipe has 7 steps with one current step (' + JSON.stringify(pipe) + ')');
+  assert(pipe.curIndex === 3 && pipe.done === 3 && !pipe.off, '"booked" is the 4th step of the real-estate pipeline, with 3 done before it');
+  assert((await panel.locator('.sc-pipe-step').textContent()) === '4/7', 'step counter reads 4/7');
+  await settle(panel);
   await page.screenshot({ path: path.join(SHOTS, '01-panel-light.png') });
+
+  await pill.click();
+  await panel.locator('.sc-stage-menu').waitFor();
+  assert(await pill.getAttribute('aria-expanded') === 'true', 'pill reports the open menu');
+  const stageOrder = await panel.locator('.sc-stage-menu [data-stage]').evaluateAll((els) => els.map((el) => el.dataset.stage + ':' + el.querySelector('.sc-menu-label').textContent));
+  assert(stageOrder.join('|') === 'new:ใหม่|interested:รู้ความต้องการ|quoted:ส่งทรัพย์แล้ว|booked:นัดดูทรัพย์|awaiting_payment:รอมัดจำ|paid:วางมัดจำแล้ว|won:ปิดดีล|lost:หลุด|spam:สแปม',
+    'stage menu follows the real-estate profile (' + stageOrder.join('|') + ')');
+  assert(await panel.locator('[data-stage="booked"].sc-on').count() === 1 && await panel.locator('.sc-menu-item.sc-on').count() === 1, 'current stage is the one marked in the menu');
+  assert(await panel.locator('[data-stage="booked"] svg').count() === 1, 'current stage carries the check mark');
+  await settle(panel);
+  await page.locator('#sidecar-host').screenshot({ path: path.join(SHOTS, '14-stage-menu.png') });
+  await pill.press('Escape');
+  await waitFor(() => stageMenuClosed(panel), 'Escape closes the stage menu');
+  assert(await pill.getAttribute('aria-expanded') === 'false', 'pill reports the closed menu');
+  await pill.click();
+  await panel.locator('.sc-stage-menu').waitFor();
+  await panel.locator('[data-sc="lead-name"]').click();
+  await waitFor(() => stageMenuClosed(panel), 'a click outside closes the stage menu');
+  await pill.click();
+  await panel.locator('.sc-stage-menu').waitFor();
+  await pill.click();
+  await waitFor(() => stageMenuClosed(panel), 'the pill toggles the stage menu shut');
+  assert((await apiGet('/api/leads/' + mint.id)).lead.stage === 'booked', 'opening and closing the menu changes nothing');
+  log('stage pill, 7-step pipe (4/7) and the stage menu: profile labels and order, opens and closes');
+
+  // tabs: one panel in the layout at a time, the others stay in the DOM
+  const tabList = await panel.locator('[data-sc="tabs"] [data-tab-view]').evaluateAll((els) => els.map((el) => el.dataset.tabView + ':' + el.childNodes[0].textContent));
+  assert(tabList.join('|') === 'overview:ภาพรวม|order:ข้อเสนอ/การจอง|notes:โน้ต|album:อัลบั้ม', 'lead tabs, with the order tab named by the profile (' + tabList.join('|') + ')');
+  assert((await shownPanels(panel)).join() === 'overview', 'the overview is the default tab');
+  for (const t of ['order', 'notes', 'album', 'overview']) {
+    await panel.locator('[data-tab-view="' + t + '"]').click();
+    assert((await shownPanels(panel)).join() === t, 'tab "' + t + '" shows its panel and hides the others (' + (await shownPanels(panel)).join() + ')');
+    assert(await panel.locator('.sc-panel').count() === 4, 'all four panels stay in the DOM');
+    assert(await panel.locator('.sc-ltab.sc-on').count() === 1 && await panel.locator('[data-tab-view="' + t + '"].sc-on[aria-selected="true"]').count() === 1, 'tab "' + t + '" is the one marked active');
+  }
+  const mintBundle = await apiGet('/api/leads/' + mint.id);
+  assert((await panel.locator('[data-tab-view="notes"] .sc-count').textContent()) === String(mintBundle.notes.length), 'notes tab counts the notes');
+  assert((await panel.locator('[data-tab-view="album"] .sc-count').textContent()) === String(mintBundle.media.length), 'album tab counts the pictures');
+  assert(await panel.locator('[data-tab-view="order"] .sc-tabdot').count() === 0, 'no dot on the order tab while there is no offer');
+  log('four tabs; each shows its own panel and hides the other three');
   await assertClean(panel.locator('#app'), 'panel lead view');
   await assertNoOverflow(panel, 'panel lead view');
 
@@ -177,6 +244,7 @@ try {
   log('lock mark unlocks a field; an emptied field is removed');
 
   // ====================================================================== 4. offer with a deposit → summary → composer
+  await panel.locator('[data-tab-view="order"]').click();
   const order = panel.locator('[data-sc="order"]');
   await order.scrollIntoViewIfNeeded();
   assert((await order.locator('.sc-sec-title').textContent()) === 'ข้อเสนอ/การจอง', 'order section is titled for the profile');
@@ -191,18 +259,21 @@ try {
   await panel.locator('[data-sc="order-save"]').click();
   const saved = await waitFor(async () => { const o = (await apiGet('/api/leads/' + mint.id)).order; return o && o.total === 11000 ? o : null; }, 'offer saved');
   assert(saved.deposit_amount === 5000 && saved.payment_method === 'transfer', 'deposit 5,000 and the single payment method saved');
+  await waitFor(async () => (await panel.locator('[data-tab-view="order"] .sc-tabdot').count()) === 1, 'order tab gets its dot once there is an open offer');
   await panel.locator('[data-sc="summary"]').click();
   await panel.locator('[data-sc="summary-text"]').waitFor();
   const summary = await panel.locator('[data-sc="summary-text"]').textContent();
   assert(summary.includes('5,000') && summary.includes('11,000') && summary.includes('มัดจำ'), 'summary carries the price and the deposit');
   await panel.locator('[data-sc="summary-insert"]').click();
   await waitFor(async () => (await composer.inputValue()).includes('มัดจำ 5,000'), 'summary inserted into the chat composer');
-  assert(await panel.locator('.sc-cta:visible').count() === 1, 'still one coral action with the summary open');
+  assert(await panel.locator('.sc-btn.sc-primary:visible').count() === 1, 'still one primary button with the summary open');
+  assert(await panel.locator('.sc-btn.sc-primary:visible').getAttribute('data-sc') === 'summary-insert', 'with the summary open, sending it is the primary action');
   await panel.locator('[data-sc="summary-text"]').scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.join(SHOTS, '02-offer-summary.png') });
-  log('unit added, 5,000 deposit, offer saved; summary built and inserted into the composer');
+  log('unit added, 5,000 deposit, offer saved (order tab dot on); summary built and inserted into the composer');
 
   // ====================================================================== 5. album labels
+  await panel.locator('[data-tab-view="album"]').click();
   const album = panel.locator('[data-sc="album"]');
   await album.scrollIntoViewIfNeeded();
   const filters = await panel.locator('[data-sc="album-filters"]').innerText();
@@ -217,6 +288,20 @@ try {
   await waitFor(async () => (await panel.locator('[data-sc="lightbox"]').count()) === 0, 'lightbox closed');
   await assertClean(panel.locator('#app'), 'panel after edits');
   log('album filters and the category picker use the real-estate labels');
+
+  // one picture of the panel per tab
+  await panel.locator('[data-sc="album-filters"] [data-cat="all"]').click();
+  for (const [t, file] of [['overview', '10-tab-overview.png'], ['order', '11-tab-order.png'], ['notes', '12-tab-notes.png'], ['album', '13-tab-album.png']]) {
+    await panel.locator('[data-tab-view="' + t + '"]').click();
+    assert((await shownPanels(panel)).join() === t, 'tab "' + t + '" shown for its screenshot');
+    await panel.locator('.sc-main').evaluate((el) => { el.scrollTop = 0; });
+    await panel.locator('[data-sc="toast"]').waitFor({ state: 'detached', timeout: 7000 }).catch(() => {});
+    await assertClean(panel.locator('#app'), 'panel tab ' + t);
+    await assertNoOverflow(panel, 'panel tab ' + t);
+    await settle(panel);
+    await page.locator('#sidecar-host').screenshot({ path: path.join(SHOTS, file) });
+  }
+  log('screenshots of the four tabs');
 
   // unknown chat → link by hand
   await page.locator('[data-chat="Cgbl7777"]').click();
@@ -251,17 +336,26 @@ try {
   const tabs = await mob.locator('[data-sc="inbox-tabs"] [data-tab]').evaluateAll((els) => els.map((el) => el.dataset.tab));
   assert(tabs.join('|') === 'all|due|new|interested|quoted|booked|awaiting_payment|paid|won|lost|spam', 'inbox tabs follow the profile order');
   assert((await mob.locator('[data-tab="booked"]').textContent()).includes('นัดดูทรัพย์'), 'inbox tab label from the profile');
-  assert(await mob.locator('[data-tab="all"].sc-on').evaluate((el) => getComputedStyle(el).backgroundColor) === FOREST, 'active tab is Forest');
+  const mobAccent = await token(mob, '--accent');
+  assert(await mob.locator('[data-tab="all"].sc-on').evaluate((el) => getComputedStyle(el).borderBottomColor) === mobAccent, 'active tab is underlined in the accent colour');
+  assert(await mob.locator('[data-tab="due"]').evaluate((el) => getComputedStyle(el).borderBottomColor) === CLEAR, 'other tabs carry no underline');
+  assert(await mintRow.locator('.sc-stage-tag[data-stage-key="booked"] .sc-dot').count() === 1, 'inbox row shows the stage with its dot');
   await mob.screenshot({ path: path.join(SHOTS, '03-mobile-inbox.png') });
   await assertClean(mob.locator('#app'), 'mobile inbox');
   await assertNoOverflow(mob, 'mobile inbox');
-  log('mobile inbox: intent · location line, profile tabs, Forest active tab');
+  log('mobile inbox: intent · location line, profile tabs, accent underline on the active tab');
 
   await mintRow.click();
   await mob.locator('[data-sc="lead-page"] [data-sc="lead-name"]').waitFor();
-  assert(await mob.locator('.sc-cta:visible').count() === 1, 'one coral action on the mobile lead view');
+  assert(await mob.locator('.sc-btn.sc-primary:visible').count() === 1, 'one primary button on the mobile lead view');
+  assert(await mob.locator('.sc-btn.sc-primary:visible').getAttribute('data-sc') === 'reply-copy', 'without a chat box to fill, copying the draft is the primary action');
+  assert(await mob.locator('[data-sc="lead-page"] .sc-ident [data-sc="back"]').count() === 1 && await mob.locator('[data-sc="back"]').count() === 1, 'the identity bar carries the one back button');
+  assert((await shownPanels(mob)).join() === 'overview', 'mobile lead view opens on the overview');
+  await settle(mob);
+  await mob.screenshot({ path: path.join(SHOTS, '15-mobile-overview.png') });
   await mob.locator('[data-sc="details"]').scrollIntoViewIfNeeded();
   await mob.evaluate(() => { const m = document.querySelector('.sc-main'); const d = document.querySelector('[data-sc="details"]'); m.scrollTop += d.getBoundingClientRect().top - m.getBoundingClientRect().top - 150; });
+  await settle(mob);
   await mob.screenshot({ path: path.join(SHOTS, '04-mobile-lead-requirements.png') });
   await assertClean(mob.locator('#app'), 'mobile lead view');
   await assertNoOverflow(mob, 'mobile lead view');
@@ -281,11 +375,12 @@ try {
   await assertNoOverflow(narrow, 'lead view at 360px');
   const clipped = await narrow.locator('.sc-main').evaluate((main) => {
     const limit = main.getBoundingClientRect().right + 0.5;
-    return [...main.querySelectorAll('button, input, select, textarea, .sc-chip, .sc-card')]
+    return [...main.querySelectorAll('button, input, select, textarea, .sc-tag, .sc-fchip, .sc-card')]
       .filter((el) => el.offsetParent && el.getBoundingClientRect().right > limit)
       .map((el) => el.dataset.sc || el.className).slice(0, 5);
   });
   assert(clipped.length === 0, 'nothing sticks out of the column at 360px (' + clipped.join(', ') + ')');
+  await settle(narrow);
   await narrow.screenshot({ path: path.join(SHOTS, '08-mobile-360.png') });
   log('nothing is clipped at 360px');
   await narrowCtx.close();
@@ -301,10 +396,13 @@ try {
   assert(await dpanel.locator('.sc-topbar').evaluate((el) => getComputedStyle(el).backgroundColor) === FOREST, 'top bar stays Forest in dark');
   assert(await dpanel.locator('.sc-root').evaluate((el) => getComputedStyle(el).backgroundColor) === 'rgb(12, 20, 15)', 'dark page is forest-black');
   assert(await dpanel.locator('.sc-root').evaluate((el) => getComputedStyle(el).color) === IVORY, 'dark text is Ivory');
-  assert(await dpanel.locator('.sc-cta:visible').first().evaluate((el) => getComputedStyle(el).backgroundColor) === CORAL, 'Coral accent in dark');
+  assert(await dpanel.locator('.sc-btn.sc-primary:visible').count() === 1, 'one primary button in dark');
+  assert(await dpanel.locator('.sc-btn.sc-primary:visible').evaluate((el) => getComputedStyle(el).backgroundColor) === await token(dpanel, '--primary'), 'primary action keeps the primary colour in dark');
+  assert(await dpanel.locator('.sc-ltab.sc-on').evaluate((el) => getComputedStyle(el).borderBottomColor) === await token(dpanel, '--accent'), 'accent underline on the active tab in dark');
   await dpanel.locator('.sc-topbar img.sc-brand-mark').evaluate((img) => img.decode());
+  await settle(dpanel);
   await dpage.screenshot({ path: path.join(SHOTS, '05-panel-dark.png') });
-  log('dark scheme: forest-black surfaces, Ivory text, Coral action');
+  log('dark scheme: forest-black surfaces, Ivory text, primary action and accent underline');
   await dark.close();
 
   // ====================================================================== 8. options page

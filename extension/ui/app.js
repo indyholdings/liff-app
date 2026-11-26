@@ -178,10 +178,10 @@
   // ------------------------------------------------------------------ constants
   const NOTE_KIND = { ai: 'AI', staff: 'ทีม', system: 'ระบบ' };
   const CARD_FIELDS = [
-    { key: 'full_name', label: 'ชื่อ-นามสกุล', placeholder: 'ยังไม่มีชื่อ', wide: true },
+    { key: 'full_name', label: 'ชื่อ-นามสกุล', placeholder: 'ยังไม่มีชื่อ' },
     { key: 'phone', label: 'เบอร์โทร', placeholder: '08x-xxx-xxxx', type: 'tel' },
     { key: 'postcode', label: 'รหัสไปรษณีย์', placeholder: '10xxx', inputmode: 'numeric' },
-    { key: 'address', label: 'ที่อยู่จัดส่ง', placeholder: 'บ้านเลขที่ ถนน แขวง/ตำบล เขต/อำเภอ จังหวัด', wide: true, multiline: true },
+    { key: 'address', label: 'ที่อยู่จัดส่ง', placeholder: 'บ้านเลขที่ ถนน แขวง/ตำบล เขต/อำเภอ จังหวัด', multiline: true },
   ];
   const LEAD_POLL_MS = 20000;
   const INBOX_POLL_MS = 30000;
@@ -240,8 +240,11 @@
     spark: 'M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z',
     clock: 'M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16zM12 8v4l3 2',
     list: 'M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01',
+    down: 'M6 9l6 6 6-6',
+    check: 'M5 12.5l4.5 4.5L19 7.5',
+    user: 'M12 4a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM4.5 20.5a7.5 7.5 0 0 1 15 0',
   };
-  function icon(name) {
+  function icon(name, cls) {
     const svg = document.createElementNS(SVG_NS, 'svg');
     svg.setAttribute('viewBox', '0 0 24 24');
     svg.setAttribute('fill', 'none');
@@ -250,6 +253,7 @@
     svg.setAttribute('stroke-linecap', 'round');
     svg.setAttribute('stroke-linejoin', 'round');
     svg.setAttribute('aria-hidden', 'true');
+    if (cls) svg.setAttribute('class', cls);
     const p = document.createElementNS(SVG_NS, 'path');
     p.setAttribute('d', ICONS[name] || '');
     svg.append(p);
@@ -316,10 +320,37 @@
     return wrapped;
   }
 
+  /**
+   * A stable 0..7 from a text. It goes on avatars without a picture and on tags as data-hue, so a
+   * theme can give each its own colour: the same text gets the same hue everywhere.
+   */
+  function hueOf(text) {
+    let n = 0;
+    for (const ch of String(text == null ? '' : text)) n = (n * 31 + ch.codePointAt(0)) >>> 0;
+    return String(n % 8);
+  }
+
+  /** Grows a text area to fit what is in it. Only measurable while the area is laid out. */
+  function autoGrow(ta) {
+    if (!ta || !ta.offsetParent) return;
+    ta.style.height = 'auto';
+    ta.style.height = ta.scrollHeight + 'px';
+  }
+
+  /** The save mark at the end of a property row: saving, saved (fades by itself) or failed. */
+  const SAVE_MARKS = { saving: ['…', 'กำลังบันทึก…', ''], ok: ['✓', 'บันทึกแล้ว', ' sc-ok'], err: ['!', 'บันทึกไม่สำเร็จ', ' sc-err'] };
+  function markState(el, kind) {
+    const m = SAVE_MARKS[kind];
+    el.className = 'sc-state' + (m ? m[2] : '');
+    el.textContent = m ? m[0] : '';
+    if (m) { el.title = m[1]; el.setAttribute('aria-label', m[1]); } else { el.removeAttribute('title'); el.removeAttribute('aria-label'); }
+    if (kind === 'ok') setTimeout(() => { if (el.classList.contains('sc-ok')) markState(el); }, 1800);
+  }
+
   function avatar(lead, small) {
     const name = lead.display_name || lead.full_name || '';
     const cls = 'sc-avatar' + (small ? ' sc-sm' : '');
-    const fallback = () => h('div', { class: cls, 'aria-hidden': 'true' }, initialOf(name));
+    const fallback = () => h('div', { class: cls, 'aria-hidden': 'true', 'data-hue': hueOf(lead.line_user_id || name) }, initialOf(name));
     const src = safeUrl(lead.picture_url);
     if (!src) return fallback();
     const img = h('img', { class: cls, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' });
@@ -327,8 +358,9 @@
     img.src = src;
     return img;
   }
+  /** A stage named in passing (list rows): its dot and its label. */
   function stageTag(stage) {
-    return h('span', { class: 'sc-stage-tag sc-st-' + stage }, stageLabel(stage));
+    return h('span', { class: 'sc-stage-tag', 'data-stage-key': stage }, h('span', { class: 'sc-dot sc-st-' + stage }), stageLabel(stage));
   }
   function leadName(l) { return l.display_name || l.full_name || 'ลูกค้า LINE'; }
 
@@ -471,6 +503,10 @@
   }
 
   // ================================================================== lead view
+  const LEAD_TABS = ['overview', 'order', 'notes', 'album'];
+  /** The tab each lead was last left on, kept for as long as the page lives. */
+  const leadTabMemory = new Map();
+
   class LeadView {
     constructor(app, bundle, opts) {
       this.app = app;
@@ -480,23 +516,48 @@
       this.timer = null;
       this.busy = false;
       this.summaryText = null;
+      this.stageOpen = false;
+      this.stageDismiss = null;
       this.cardInputs = {};
       this.cardStates = {};
       this.detailInputs = {};
       this.detailStates = {};
+      this.tab = leadTabMemory.get(bundle.lead.id) || 'overview';
       this.initDraft();
 
-      this.secHead = h('section', { class: 'sc-card', 'data-sc': 'lead-head' });
+      // header zone: who the customer is, where the deal stands
+      this.identEl = h('div', { class: 'sc-ident' + (this.opts.back ? ' sc-has-back' : ''), 'data-sc': 'lead-head' });
+      this.stageEl = h('div', { class: 'sc-stage', role: 'group', 'aria-label': 'สถานะลูกค้า', 'data-sc': 'stages', onkeydown: (e) => this.stageKey(e) });
+      this.tagRow = h('div', { class: 'sc-tagrow', 'data-sc': 'tags' });
+      this.tabsEl = h('div', { class: 'sc-ltabs', role: 'tablist', 'aria-label': 'ข้อมูลของลูกค้า', 'data-sc': 'tabs', onkeydown: (e) => this.tabKey(e) });
+
+      // cards
       this.secAgent = h('section', { class: 'sc-card sc-agent', 'data-sc': 'agent' });
-      this.secMsgs = h('section', { class: 'sc-card', 'data-sc': 'messages' });
-      this.secCard = h('section', { class: 'sc-card', 'data-sc': 'card' });
       this.secDetails = h('section', { class: 'sc-card', 'data-sc': 'details', hidden: true });
+      this.secCard = h('section', { class: 'sc-card', 'data-sc': 'card' });
+      this.secFollow = h('section', { class: 'sc-card', 'data-sc': 'followup' });
+      this.secMsgs = h('details', { class: 'sc-card sc-details', 'data-sc': 'messages', hidden: true });
+      this.secMsgs.addEventListener('toggle', () => { if (this.secMsgs.open && this.msgList) this.msgList.scrollTop = this.msgList.scrollHeight; });
       this.secOrder = h('section', { class: 'sc-card', 'data-sc': 'order' });
       this.secNotes = h('section', { class: 'sc-card', 'data-sc': 'notes' });
       this.secAlbum = h('section', { class: 'sc-card', 'data-sc': 'album' });
-      this.secFollow = h('section', { class: 'sc-card', 'data-sc': 'followup' });
-      this.el = h('div', { class: 'sc-view', 'data-sc': 'lead', 'data-lead-id': bundle.lead.id },
-        this.secHead, this.secAgent, this.secMsgs, this.secCard, this.secDetails, this.secOrder, this.secNotes, this.secAlbum, this.secFollow);
+
+      // One panel per tab. All four stay in the DOM so a background refresh can update them;
+      // the ones not shown are taken out of the layout with [hidden].
+      const panel = (id, ...cards) => h('div', {
+        class: 'sc-view sc-panel', role: 'tabpanel', id: 'sc-panel-' + id, 'aria-labelledby': 'sc-ltab-' + id, 'data-panel': id, hidden: id !== this.tab,
+      }, cards);
+      this.panels = {
+        overview: panel('overview', this.secAgent, this.secDetails, this.secCard, this.secFollow, this.secMsgs),
+        order: panel('order', this.secOrder),
+        notes: panel('notes', this.secNotes),
+        album: panel('album', this.secAlbum),
+      };
+      this.el = h('div', { class: 'sc-lead', 'data-sc': 'lead', 'data-lead-id': bundle.lead.id },
+        this.identEl,
+        h('div', { class: 'sc-lead-meta' }, this.stageEl, this.tagRow),
+        this.tabsEl,
+        LEAD_TABS.map((t) => this.panels[t]));
 
       this.buildCard();
       this.buildDetails();
@@ -510,12 +571,13 @@
     // ---- lifecycle
     start() {
       this.stop();
+      this.fitText();
       this.timer = setInterval(() => {
         if (document.visibilityState !== 'visible' || this.busy || this.app.overlayOpen()) return;
         this.reload(true);
       }, LEAD_POLL_MS);
     }
-    stop() { clearInterval(this.timer); this.timer = null; }
+    stop() { clearInterval(this.timer); this.timer = null; this.closeStageMenu(); }
 
     async reload(quiet) {
       try {
@@ -551,74 +613,186 @@
       return r.lead;
     }
 
-    // ---- header: identity, stage, tags
+    // ---- header: identity bar, stage, tags, tabs
     renderHead() {
-      const active = document.activeElement;
-      if (active && active.classList && active.classList.contains('sc-chip-input') && this.secHead.contains(active)) return;
+      this.renderIdent();
+      this.renderStage();
+      this.renderTags();
+      this.renderTabs();
+    }
+
+    /** Sticky bar: back (when opened from a list), avatar, name, contact line, assignee. */
+    renderIdent() {
       const l = this.lead;
       const me = this.app.me;
-      const subBits = [];
-      if (l.full_name && l.display_name && l.full_name !== l.display_name) subBits.push(l.full_name);
-      if (l.last_message_at) subBits.push('ล่าสุด ' + relTime(l.last_message_at));
       const staff = this.app.staffList;
-      if (!(staff && staff.length)) subBits.push(l.assignee_name ? 'ดูแลโดย ' + l.assignee_name : 'ยังไม่มีผู้ดูแล');
+      const hasStaff = !!(staff && staff.length);
+      const tel = String(l.phone || '').replace(/[^0-9+]/g, '');
+      const fullName = l.full_name && l.display_name && l.full_name !== l.display_name ? l.full_name : '';
+      const last = l.last_message_at ? 'ล่าสุด ' + relTime(l.last_message_at) : '';
+      const assignee = hasStaff && l.assignee_id != null ? staff.find((s) => s.id === l.assignee_id) : null;
+      const assigneeName = (assignee && assignee.name) || l.assignee_name || '';
+      // Rebuilt only when something it shows has changed, so a background refresh does not close an open picker.
+      const sig = JSON.stringify([l.display_name, l.full_name, l.picture_url, l.line_user_id, l.phone, last, l.assignee_id, assigneeName,
+        hasStaff ? staff.map((s) => [s.id, s.name]) : null, me ? me.id : null]);
+      if (sig === this.identSig) return;
+      this.identSig = sig;
 
-      let claim = null;
-      if (staff && staff.length) {
-        claim = h('select', {
-          class: 'sc-input sc-assignee', 'aria-label': 'ผู้ดูแลลูกค้า', title: 'ผู้ดูแลลูกค้า', 'data-sc': 'assignee',
+      const sub = h('div', { class: 'sc-sub' });
+      [
+        fullName || null,
+        tel ? h('a', { href: 'tel:' + tel, title: 'โทรหาลูกค้า', 'data-sc': 'call' }, String(l.phone)) : null,
+        last || null,
+      ].filter(Boolean).forEach((bit, i) => append(sub, [i ? ' · ' : null, bit]));
+
+      const chip = assigneeName
+        ? h('div', { class: 'sc-assign-chip', 'aria-hidden': 'true', 'data-hue': hueOf(assigneeName) }, initialOf(assigneeName))
+        : h('div', { class: 'sc-assign-chip sc-none', 'aria-hidden': 'true' }, icon('user'));
+      const assignTitle = assigneeName ? 'ผู้ดูแล: ' + assigneeName : 'ยังไม่มีผู้ดูแล';
+      let assign;
+      if (hasStaff) {
+        const select = h('select', {
+          'aria-label': 'ผู้ดูแลลูกค้า', title: assignTitle, 'data-sc': 'assignee',
           onchange: (e) => this.setAssignee(e.target.value ? Number(e.target.value) : null),
         }, h('option', { value: '' }, 'ไม่มีผู้ดูแล'), staff.map((s) => h('option', { value: s.id }, s.name)));
-        claim.value = l.assignee_id == null ? '' : String(l.assignee_id);
-      } else if (me && l.assignee_id !== me.id) {
-        claim = h('button', { type: 'button', class: 'sc-btn sc-small', 'data-sc': 'claim', onclick: () => this.setAssignee(me.id) }, 'รับเคสนี้');
+        select.value = l.assignee_id == null ? '' : String(l.assignee_id);
+        assign = h('div', { class: 'sc-assign' }, chip, select);
+      } else {
+        // No staff list from the server: show who has the lead and offer to take it.
+        assign = [
+          me && l.assignee_id !== me.id ? h('button', { type: 'button', class: 'sc-btn sc-small', 'data-sc': 'claim', onclick: () => this.setAssignee(me.id) }, 'รับเคสนี้') : null,
+          h('div', { class: 'sc-assign', title: assignTitle, role: 'img', 'aria-label': assignTitle }, chip),
+        ];
       }
-      const stageLock = (l.locked_fields || []).includes('stage')
-        ? h('div', { class: 'sc-lockline', 'data-sc': 'stage-lock' }, icon('lock'), 'ทีมตั้งสถานะเอง Agent จะไม่เปลี่ยนให้ ',
-          h('button', { type: 'button', class: 'sc-link', onclick: () => this.unlock('stage') }, 'ให้ Agent ดูแลสถานะต่อ'))
-        : null;
 
-      const stageChips = h('div', { class: 'sc-chips', role: 'group', 'aria-label': 'สถานะลูกค้า', 'data-sc': 'stages' },
+      let back = null;
+      if (this.opts.back) {
+        back = iconBtn('back', 'กลับ', () => this.opts.back());
+        back.dataset.sc = 'back';
+      }
+      fill(this.identEl,
+        back,
+        avatar(l),
+        h('div', { class: 'sc-ident-text' },
+          h('div', { class: 'sc-name', 'data-sc': 'lead-name' }, leadName(l)),
+          sub),
+        assign);
+    }
+
+    /** The steps a deal walks through. "Lost" and "spam" are ways out, not steps. */
+    pipeStages() { return CONFIG.stages.filter((s) => s.key !== 'lost' && s.key !== 'spam'); }
+
+    /** Stage pill with its progress bar, and the stage menu while it is open. */
+    renderStage() {
+      const l = this.lead;
+      const locked = (l.locked_fields || []).includes('stage');
+      const sig = JSON.stringify([l.stage, locked, this.stageOpen, CONFIG.stages]);
+      if (sig === this.stageSig) return;
+      this.stageSig = sig;
+      const hadFocus = this.stageEl.contains(document.activeElement);
+
+      const steps = this.pipeStages();
+      const at = steps.findIndex((s) => s.key === l.stage);
+      const pill = h('button', {
+        type: 'button', class: 'sc-stage-pill', 'data-sc': 'stage-toggle', 'data-stage-key': l.stage,
+        'aria-haspopup': 'menu', 'aria-expanded': this.stageOpen ? 'true' : 'false',
+        title: locked ? 'ทีมตั้งสถานะเอง — Agent จะไม่เปลี่ยนให้ (กดเพื่อเปลี่ยนหรือปลดล็อก)' : 'เปลี่ยนสถานะลูกค้า',
+        onclick: () => this.toggleStageMenu(),
+      },
+      h('span', { class: 'sc-dot sc-st-' + l.stage }),
+      h('span', { 'data-sc': 'stage-label' }, stageLabel(l.stage)),
+      locked ? icon('lock', 'sc-lock-ico') : null,
+      icon('down'));
+      const pipe = h('div', {
+        class: 'sc-pipe' + (at < 0 ? ' sc-off' : ''), role: 'img',
+        'aria-label': at < 0 ? 'ออกจากขั้นตอนการขายแล้ว' : 'ขั้นที่ ' + (at + 1) + ' จาก ' + steps.length,
+      }, steps.map((s, i) => h('i', { class: at < 0 ? null : i < at ? 'sc-done' : i === at ? 'sc-cur' : null, title: s.label })));
+      const step = at < 0 ? null : h('span', { class: 'sc-pipe-step', 'aria-hidden': 'true' }, (at + 1) + '/' + steps.length);
+
+      fill(this.stageEl, pill, pipe, step, this.stageOpen ? this.stageMenu(locked) : null);
+      this.stagePill = pill;
+      if (hadFocus) pill.focus();
+    }
+
+    /** Built when the menu opens and dropped when it closes: the items exist only while it shows. */
+    stageMenu(locked) {
+      const cur = this.lead.stage;
+      return h('div', { class: 'sc-menu sc-stage-menu', role: 'menu', 'aria-label': 'เลือกสถานะลูกค้า', 'data-sc': 'stage-menu' },
         CONFIG.stages.map((s) => h('button', {
-          type: 'button',
-          class: 'sc-chip sc-st-' + s.key + (l.stage === s.key ? ' sc-on' : ''),
-          'aria-pressed': l.stage === s.key ? 'true' : 'false',
-          'data-stage': s.key,
+          type: 'button', role: 'menuitemradio', class: 'sc-menu-item' + (s.key === cur ? ' sc-on' : ''),
+          'aria-checked': s.key === cur ? 'true' : 'false', 'data-stage': s.key,
           onclick: () => this.setStage(s.key),
-        }, s.label)));
-
-      const tagInput = h('input', {
-        class: 'sc-chip-input', type: 'text', placeholder: '+ แท็ก', maxlength: '30', 'aria-label': 'เพิ่มแท็ก', 'data-sc': 'tag-input',
-        onkeydown: (e) => {
-          if (e.key === 'Enter') { e.preventDefault(); this.addTag(tagInput); }
-          if (e.key === 'Escape') { tagInput.value = ''; tagInput.blur(); }
         },
-        onblur: () => { if (tagInput.value.trim()) this.addTag(tagInput); else this.renderHead(); },
-      });
-      const tags = h('div', { class: 'sc-chips', 'data-sc': 'tags' },
-        (l.interests || []).map((t) => h('span', { class: 'sc-chip sc-interest', title: 'ความสนใจที่ Agent จับได้' }, t)),
-        (l.tags || []).map((t) => h('span', { class: 'sc-chip sc-tag' }, t,
-          h('button', { type: 'button', class: 'sc-x', 'aria-label': 'ลบแท็ก ' + t, onclick: () => this.removeTag(t) }, '×'))),
-        tagInput);
+        h('span', { class: 'sc-dot sc-st-' + s.key }),
+        h('span', { class: 'sc-menu-label' }, s.label),
+        s.key === cur ? icon('check') : null)),
+        locked ? [
+          h('div', { class: 'sc-menu-sep' }),
+          h('div', { class: 'sc-menu-foot' },
+            h('span', null, icon('lock'), 'ทีมตั้งสถานะเอง Agent จะไม่เปลี่ยนให้'),
+            h('button', { type: 'button', class: 'sc-link', 'data-sc': 'stage-lock', onclick: () => { this.closeStageMenu(true); this.unlock('stage'); } }, 'ให้ Agent ดูแลสถานะต่อ')),
+        ] : null);
+    }
 
-      fill(this.secHead, h('div', { class: 'sc-lead-head' },
-        h('div', { class: 'sc-ident' },
-          avatar(l),
-          h('div', { class: 'sc-ident-text' },
-            h('div', { class: 'sc-name', 'data-sc': 'lead-name' }, leadName(l)),
-            h('div', { class: 'sc-sub' }, subBits.join(' · '))),
-          claim),
-        stageChips,
-        stageLock,
-        tags));
+    toggleStageMenu() {
+      if (this.stageOpen) this.closeStageMenu(true);
+      else this.openStageMenu();
+    }
+
+    openStageMenu() {
+      if (this.stageOpen) return;
+      this.stageOpen = true;
+      this.renderStage();
+      const d = {
+        click: (e) => { if (!this.stageEl.contains(e.target)) this.closeStageMenu(); },
+        key: (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); this.closeStageMenu(true); } },
+        blur: () => this.closeStageMenu(),
+      };
+      this.stageDismiss = d;
+      document.addEventListener('click', d.click, true);
+      document.addEventListener('keydown', d.key, true);
+      global.addEventListener('blur', d.blur); // a click on the page around the panel
+    }
+
+    closeStageMenu(refocus) {
+      if (!this.stageOpen) return;
+      this.stageOpen = false;
+      const d = this.stageDismiss;
+      this.stageDismiss = null;
+      if (d) {
+        document.removeEventListener('click', d.click, true);
+        document.removeEventListener('keydown', d.key, true);
+        global.removeEventListener('blur', d.blur);
+      }
+      this.renderStage();
+      if (refocus && this.stagePill && this.stagePill.isConnected) this.stagePill.focus();
+    }
+
+    /** Arrow keys walk the open menu; Arrow Down on the pill opens it. */
+    stageKey(e) {
+      if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;
+      if (!this.stageOpen) {
+        if (e.key !== 'ArrowDown' || e.target !== this.stagePill) return;
+        this.openStageMenu();
+      }
+      e.preventDefault();
+      const items = Array.from(this.stageEl.querySelectorAll('.sc-menu-item'));
+      if (!items.length) return;
+      let i = items.indexOf(document.activeElement);
+      if (i < 0) i = Math.max(0, items.findIndex((el) => el.classList.contains('sc-on'))) - (e.key === 'ArrowDown' ? 1 : 0);
+      if (e.key === 'Home') i = 0;
+      else if (e.key === 'End') i = items.length - 1;
+      else i = (i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+      items[i].focus();
     }
 
     async setStage(stage) {
       const l = this.lead;
+      this.closeStageMenu(true);
       if (l.stage === stage) return;
       const prev = l.stage;
       l.stage = stage;
-      this.renderHead();
+      this.renderStage();
       try {
         await this.patchLead({ stage });
         this.renderHead();
@@ -626,7 +800,7 @@
         this.app.notifyChanged();
       } catch (err) {
         this.lead.stage = prev;
-        this.renderHead();
+        this.renderStage();
         this.app.toast('เปลี่ยนสถานะไม่สำเร็จ: ' + err.message, 'err');
       }
     }
@@ -635,7 +809,8 @@
       try {
         await this.patchLead({ assignee_id: id }, id == null ? 'ยกเลิกผู้ดูแลแล้ว' : 'ตั้งผู้ดูแลแล้ว');
       } catch (err) { this.app.toast(err.message, 'err'); }
-      this.renderHead();
+      this.identSig = null; // a failed change has to put the picker back on the saved value
+      this.renderIdent();
     }
 
     /** Hands a field back to the agent: it may fill or change it again. */
@@ -648,57 +823,142 @@
       this.syncDetails();
     }
 
+    // ---- tags
+    renderTags() {
+      // Never rebuild the row under the person typing a tag.
+      if (this.tagInput && document.activeElement === this.tagInput) return;
+      const l = this.lead;
+      const tagInput = h('input', {
+        class: 'sc-chip-input', type: 'text', placeholder: '+ แท็ก', maxlength: '30', 'aria-label': 'เพิ่มแท็ก', 'data-sc': 'tag-input',
+        onkeydown: (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); this.addTag(tagInput); }
+          if (e.key === 'Escape') { tagInput.value = ''; tagInput.blur(); }
+        },
+        onblur: () => { if (tagInput.value.trim()) this.addTag(tagInput); else this.renderTags(); },
+      });
+      this.tagInput = tagInput;
+      fill(this.tagRow,
+        (l.interests || []).map((t) => h('span', { class: 'sc-tag sc-interest', 'data-hue': hueOf(t), title: 'ความสนใจที่ Agent จับได้' }, String(t))),
+        (l.tags || []).map((t) => h('span', { class: 'sc-tag', 'data-hue': hueOf(t) }, String(t),
+          h('button', { type: 'button', class: 'sc-x', 'aria-label': 'ลบแท็ก ' + t, onclick: () => this.removeTag(t) }, '×'))),
+        tagInput);
+    }
+
     async addTag(input) {
       const t = input.value.trim();
       input.value = '';
       const tags = this.lead.tags || [];
-      if (!t || tags.includes(t)) { this.renderHead(); return; }
+      if (!t || tags.includes(t)) { this.renderTags(); return; }
       input.blur();
       try {
         await this.patchLead({ tags: tags.concat(t) });
       } catch (err) { this.app.toast(err.message, 'err'); }
-      this.renderHead();
+      this.renderTags();
     }
 
     async removeTag(t) {
       try {
         await this.patchLead({ tags: (this.lead.tags || []).filter((x) => x !== t) });
       } catch (err) { this.app.toast(err.message, 'err'); }
-      this.renderHead();
+      this.renderTags();
     }
 
-    // ---- agent box
+    // ---- tabs
+    /** The order tab asks for attention while an order is open or a slip waits to be confirmed. */
+    orderNeedsAttention() {
+      const o = this.b.order;
+      if (o && (o.status === 'draft' || o.status === 'awaiting_payment')) return true;
+      const settled = !!o && (o.status === 'paid' || o.status === 'cancelled');
+      return !settled && (this.b.media || []).some((m) => m.category === 'slip' && m.slip && m.slip.matches_order != null);
+    }
+
+    renderTabs() {
+      const counts = { notes: (this.b.notes || []).length, album: (this.b.media || []).length };
+      const labels = { overview: 'ภาพรวม', order: L().order, notes: 'โน้ต', album: 'อัลบั้ม' };
+      const dot = this.orderNeedsAttention();
+      const sig = JSON.stringify([this.tab, counts, labels.order, dot]);
+      if (sig === this.tabsSig) return;
+      this.tabsSig = sig;
+      const hadFocus = this.tabsEl.contains(document.activeElement);
+      fill(this.tabsEl, LEAD_TABS.map((t) => h('button', {
+        type: 'button', role: 'tab', id: 'sc-ltab-' + t, class: 'sc-ltab' + (t === this.tab ? ' sc-on' : ''), 'data-tab-view': t,
+        'aria-selected': t === this.tab ? 'true' : 'false', 'aria-controls': 'sc-panel-' + t, tabindex: t === this.tab ? '0' : '-1',
+        onclick: () => this.showTab(t),
+      },
+      labels[t],
+      t in counts ? h('span', { class: 'sc-count' }, counts[t]) : null,
+      t === 'order' && dot ? h('span', { class: 'sc-tabdot', title: 'มี' + L().order + 'ที่ยังไม่ปิด', 'data-sc': 'order-dot' }) : null)));
+      if (hadFocus) { const on = this.tabsEl.querySelector('.sc-on'); if (on) on.focus(); }
+    }
+
+    showTab(tab) {
+      if (!LEAD_TABS.includes(tab)) return;
+      this.tab = tab;
+      leadTabMemory.set(this.lead.id, tab);
+      for (const t of LEAD_TABS) this.panels[t].hidden = t !== tab;
+      this.renderTabs();
+      this.fitText();
+      // A newly shown panel starts at its top, just under the sticky tabs.
+      const main = this.app.main;
+      const over = this.tabsEl.getBoundingClientRect().bottom - this.panels[tab].getBoundingClientRect().top;
+      if (main && over > 0) main.scrollTop -= over;
+    }
+
+    tabKey(e) {
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+      e.preventDefault();
+      const i = LEAD_TABS.indexOf(this.tab) + (e.key === 'ArrowRight' ? 1 : -1);
+      this.showTab(LEAD_TABS[(i + LEAD_TABS.length) % LEAD_TABS.length]);
+      const on = this.tabsEl.querySelector('.sc-on');
+      if (on) on.focus();
+    }
+
+    /** Text areas that grow with their content can only be measured while they are laid out. */
+    fitText() {
+      for (const ta of this.el.querySelectorAll('textarea.sc-pinput, textarea.sc-composer-input')) autoGrow(ta);
+    }
+
+    // ---- assistant card
     renderAgent() {
       const l = this.lead;
-      const analyzeBtn = h('button', { type: 'button', class: 'sc-btn sc-small sc-ghost', 'data-sc': 'analyze', onclick: (e) => this.analyze(e.currentTarget) }, icon('refresh'), 'วิเคราะห์ใหม่');
-      const head = h('div', { class: 'sc-sec-head' }, h('h2', { class: 'sc-sec-title' }, 'Agent แนะนำ'), analyzeBtn);
+      const analyzeBtn = iconBtn('refresh', 'วิเคราะห์แชทใหม่', (e) => this.analyze(e.currentTarget));
+      analyzeBtn.dataset.sc = 'analyze';
+      const head = h('div', { class: 'sc-sec-head' },
+        h('span', { class: 'sc-agent-ico', 'aria-hidden': 'true' }, icon('spark')),
+        h('h2', { class: 'sc-sec-title' }, 'ผู้ช่วยแนะนำ'),
+        analyzeBtn);
       const body = h('div', { class: 'sc-sec-body' });
       if (!l.ai_summary && !l.next_action && !l.suggested_reply) {
-        body.append(h('div', { class: 'sc-muted' }, 'Agent ยังไม่ได้วิเคราะห์แชทนี้ กด "วิเคราะห์ใหม่" เพื่อให้อ่านแชทล่าสุด'));
+        body.append(h('div', { class: 'sc-muted sc-small' }, 'ผู้ช่วยยังไม่ได้วิเคราะห์แชทนี้ กดปุ่มวิเคราะห์ใหม่ที่มุมขวาเพื่อให้อ่านแชทล่าสุด'));
       } else {
-        if (l.ai_summary) body.append(h('div', { 'data-sc': 'ai-summary', style: 'white-space:pre-wrap' }, l.ai_summary));
+        if (l.ai_summary) body.append(h('div', { class: 'sc-summary', 'data-sc': 'ai-summary' }, l.ai_summary));
         if (l.next_action) {
-          body.append(h('dl', { class: 'sc-kv' }, h('dt', null, 'ควรทำต่อ'), h('dd', { class: 'sc-next', 'data-sc': 'next-action' }, l.next_action)));
+          body.append(h('div', { class: 'sc-next' },
+            h('div', { class: 'sc-next-label' }, 'ควรทำต่อ'),
+            h('div', { class: 'sc-next-text', 'data-sc': 'next-action' }, l.next_action)));
         }
         if (l.suggested_reply) {
           body.append(
-            h('div', { class: 'sc-label' }, 'ร่างคำตอบ'),
-            h('blockquote', { class: 'sc-quote', 'data-sc': 'suggested-reply' }, l.suggested_reply),
-            this.textActions(() => l.suggested_reply, 'reply', true));
+            h('div', { class: 'sc-bubble-label' }, 'ร่างคำตอบ'),
+            h('div', { class: 'sc-bubble', 'data-sc': 'suggested-reply' }, l.suggested_reply),
+            this.textActions(() => this.lead.suggested_reply, 'reply'));
         }
       }
       fill(this.secAgent, head, body);
     }
 
-    /** Insert / copy buttons for a piece of text. `cta` marks the one main action of the view. */
-    textActions(getText, key, cta) {
+    /**
+     * Insert / copy buttons for a piece of text. Putting it into the chat is the main action;
+     * where the host cannot do that (the mobile page), copying is.
+     */
+    textActions(getText, key) {
       const row = h('div', { class: 'sc-row-gap' });
-      const strong = ' sc-primary' + (cta ? ' sc-cta' : '');
-      if (this.app.host.insertText) {
-        row.append(h('button', { type: 'button', class: 'sc-btn sc-small' + strong, 'data-sc': key + '-insert', onclick: () => this.app.insertOrCopy(getText()) }, icon('insert'), 'ใส่ในช่องแชท'));
+      const canInsert = !!this.app.host.insertText;
+      if (canInsert) {
+        row.append(h('button', { type: 'button', class: 'sc-btn sc-primary', 'data-sc': key + '-insert', onclick: () => this.app.insertOrCopy(getText()) }, icon('insert'), 'ใส่ในช่องแชท'));
       }
       row.append(h('button', {
-        type: 'button', class: 'sc-btn sc-small' + (this.app.host.insertText ? '' : strong), 'data-sc': key + '-copy',
+        type: 'button', class: 'sc-btn' + (canInsert ? '' : ' sc-primary'), 'data-sc': key + '-copy',
         onclick: () => this.app.copy(getText()),
       }, icon('copy'), 'คัดลอก'));
       return row;
@@ -708,56 +968,70 @@
       if (this.busy) return;
       this.busy = true;
       btn.disabled = true;
-      btn.lastChild.textContent = 'กำลังวิเคราะห์…';
+      btn.classList.add('sc-spin');
+      btn.title = 'กำลังวิเคราะห์…';
       try {
         const b = await this.api.post('/api/leads/' + this.lead.id + '/analyze');
         if (b.lead) this.applyBundle(b);
         this.app.toast('วิเคราะห์แชทล่าสุดแล้ว', 'ok');
       } catch (err) {
         this.app.toast('วิเคราะห์ไม่สำเร็จ: ' + err.message, 'err');
-        this.renderAgent();
       } finally {
         this.busy = false;
+        this.renderAgent();
       }
     }
 
-    // ---- recent messages (collapsed)
+    // ---- recent chat (collapsed)
     renderMessages() {
       const msgs = this.b.messages || [];
-      const wasOpen = !!(this.msgDetails && this.msgDetails.open);
-      if (!msgs.length) { this.secMsgs.hidden = true; return; }
-      this.secMsgs.hidden = false;
-      const list = h('div', { class: 'sc-msgs' }, msgs.map((m) => {
+      this.secMsgs.hidden = !msgs.length;
+      const last = msgs[msgs.length - 1];
+      const sig = msgs.length ? msgs.length + ':' + (last.id != null ? last.id : last.sent_at) : '';
+      if (sig === this.msgsSig) return;
+      this.msgsSig = sig;
+      if (!msgs.length) { this.msgList = null; this.secMsgs.replaceChildren(); return; }
+      this.msgList = h('div', { class: 'sc-msgs' }, msgs.map((m) => {
         const text = m.type === 'text' ? (m.text || '') : m.type === 'image' ? '[รูปภาพ]' : m.type === 'sticker' ? '[สติกเกอร์]' : (m.text || '[ข้อความอื่น]');
         return h('div', { class: 'sc-msg' + (m.direction === 'out' ? ' sc-out' : '') }, text, h('time', null, fmtDateTime(m.sent_at)));
       }));
-      this.msgDetails = h('details', { class: 'sc-details', open: wasOpen },
+      fill(this.secMsgs,
         h('summary', null,
           h('span', { class: 'sc-chev' }, icon('chev')),
-          h('h2', { class: 'sc-sec-title', style: 'flex:none' }, 'แชทล่าสุด'),
-          h('span', { class: 'sc-sub' }, msgs.length + ' ข้อความ')),
-        list);
-      this.msgDetails.addEventListener('toggle', () => { if (this.msgDetails.open) list.scrollTop = list.scrollHeight; });
-      fill(this.secMsgs, this.msgDetails);
+          h('h2', { class: 'sc-sec-title' }, 'แชทล่าสุด'),
+          h('span', { class: 'sc-sec-side' }, msgs.length + ' ข้อความ')),
+        this.msgList);
+      if (this.secMsgs.open) this.msgList.scrollTop = this.msgList.scrollHeight;
     }
 
-    // ---- lead card (inline edit)
+    // ---- property rows (customer card, requirement card)
+    /** One row: label, the control edited in place, then the save mark and the lock. */
+    propRow(o) {
+      const state = h('span', { class: 'sc-state' });
+      const lock = h('button', {
+        type: 'button', class: 'sc-lockmark', hidden: true, 'data-lock': o.lockKey,
+        title: 'ทีมแก้ไขเอง — Agent จะไม่เขียนทับ (กดเพื่อปลดล็อก)', 'aria-label': 'ปลดล็อก ' + o.label + ' ให้ Agent กรอกได้',
+        onclick: (e) => { e.preventDefault(); this.unlock(o.lockKey); },
+      }, icon('lock'));
+      const row = h('div', { class: 'sc-prop' + (o.top ? ' sc-top' : '') },
+        h('label', { class: 'sc-prop-label', for: o.input.id }, o.label),
+        o.input,
+        h('div', { class: 'sc-prop-end' }, state, lock));
+      return { row, state, lock };
+    }
+
+    // ---- customer card (inline edit)
     buildCard() {
-      const grid = h('div', { class: 'sc-grid-card' });
+      const props = h('div', { class: 'sc-props' });
       for (const f of CARD_FIELDS) {
-        const state = h('span', { class: 'sc-state' });
-        const lock = h('button', {
-          type: 'button', class: 'sc-lockmark', hidden: true, 'data-lock': f.key,
-          title: 'ทีมแก้ไขเอง — Agent จะไม่เขียนทับ (กดเพื่อปลดล็อก)', 'aria-label': 'ปลดล็อก ' + f.label + ' ให้ Agent กรอกได้',
-          onclick: (e) => { e.preventDefault(); this.unlock(f.key); },
-        }, icon('lock'));
         const common = {
-          class: 'sc-input', id: 'sc-f-' + f.key, placeholder: f.placeholder, 'data-field': f.key, autocomplete: 'off',
+          class: 'sc-pinput', id: 'sc-f-' + f.key, placeholder: f.placeholder, 'data-field': f.key, autocomplete: 'off',
           onblur: () => this.saveField(f.key),
         };
         let input;
         if (f.multiline) {
           input = h('textarea', Object.assign({ rows: '2' }, common, {
+            oninput: () => autoGrow(input),
             onkeydown: (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) input.blur(); if (e.key === 'Escape') this.resetField(f.key); },
           }));
         } else {
@@ -765,23 +1039,17 @@
             onkeydown: (e) => { if (e.key === 'Enter') input.blur(); if (e.key === 'Escape') this.resetField(f.key); },
           }));
         }
-        this.cardInputs[f.key] = input;
-        this.cardStates[f.key] = { state, lock };
-        let control = input;
-        if (f.key === 'phone') {
-          this.callLink = h('a', { class: 'sc-iconbtn', title: 'โทร', 'aria-label': 'โทรหาลูกค้า', hidden: true }, icon('phone'));
-          control = h('div', { class: 'sc-phone-wrap' }, input, this.callLink);
-        }
         // Only a shop ships to the address; elsewhere it is simply where the customer can be reached.
         const label = f.key === 'address' && CONFIG.profile !== 'retail' ? 'ที่อยู่ติดต่อ' : f.label;
-        grid.append(h('div', { class: 'sc-field' + (f.wide ? ' sc-wide' : '') },
-          h('div', { class: 'sc-label' }, h('label', { for: 'sc-f-' + f.key }, label), lock, state),
-          control));
+        const r = this.propRow({ label, input, lockKey: f.key, top: !!f.multiline });
+        this.cardInputs[f.key] = input;
+        this.cardStates[f.key] = { state: r.state, lock: r.lock };
+        props.append(r.row);
       }
-      this.samePhoneBox = h('div', { hidden: true });
-      fill(this.secCard, 
+      this.samePhoneBox = h('div', { class: 'sc-inline-note', 'data-sc': 'same-phone', hidden: true });
+      fill(this.secCard,
         h('div', { class: 'sc-sec-head' }, h('h2', { class: 'sc-sec-title' }, 'ข้อมูลลูกค้า')),
-        h('div', { class: 'sc-sec-body' }, this.samePhoneBox, grid));
+        h('div', { class: 'sc-sec-body' }, this.samePhoneBox, props));
     }
 
     syncCard() {
@@ -791,20 +1059,20 @@
         const input = this.cardInputs[f.key];
         const server = l[f.key] == null ? '' : String(l[f.key]);
         // Never fight the person typing: a focused field keeps what they typed.
-        if (document.activeElement !== input) input.value = server;
+        if (document.activeElement !== input) {
+          input.value = server;
+          if (f.multiline) autoGrow(input);
+        }
         input.dataset.saved = server;
         this.cardStates[f.key].lock.hidden = !locked.includes(f.key);
       }
-      const tel = String(l.phone || '').replace(/[^0-9+]/g, '');
-      this.callLink.hidden = !tel;
-      if (tel) this.callLink.href = 'tel:' + tel;
 
       const same = this.b.same_phone || [];
-      if (!same.length) { this.samePhoneBox.hidden = true; this.samePhoneBox.replaceChildren(); return; }
-      this.samePhoneBox.hidden = false;
-      fill(this.samePhoneBox, h('div', { class: 'sc-notice', 'data-sc': 'same-phone' },
+      this.samePhoneBox.hidden = !same.length;
+      if (!same.length) { this.samePhoneBox.replaceChildren(); return; }
+      fill(this.samePhoneBox,
         h('b', null, 'ลูกค้าเก่า'), ' — เบอร์นี้ตรงกับ ',
-        same.map((s, i) => [i ? ', ' : '', h('button', { type: 'button', class: 'sc-link', onclick: () => this.app.openLead(s.id) }, leadName(s))])));
+        same.map((s, i) => [i ? ', ' : '', h('button', { type: 'button', class: 'sc-link', onclick: () => this.app.openLead(s.id) }, leadName(s))]));
     }
 
     // ---- requirement card: the profile's detail fields (empty for retail, so the card stays hidden)
@@ -812,37 +1080,29 @@
       const fields = CONFIG.detail_fields;
       this.secDetails.hidden = !fields.length;
       if (!fields.length) return;
-      const grid = h('div', { class: 'sc-grid-card' });
-      fields.forEach((f, i) => {
-        const lockKey = 'details.' + f.key;
-        const state = h('span', { class: 'sc-state' });
-        const lock = h('button', {
-          type: 'button', class: 'sc-lockmark', hidden: true, 'data-lock': lockKey,
-          title: 'ทีมแก้ไขเอง — Agent จะไม่เขียนทับ (กดเพื่อปลดล็อก)', 'aria-label': 'ปลดล็อก ' + f.label + ' ให้ Agent กรอกได้',
-          onclick: (e) => { e.preventDefault(); this.unlock(lockKey); },
-        }, icon('lock'));
+      const props = h('div', { class: 'sc-props' });
+      for (const f of fields) {
         let input;
         if (f.type === 'select') {
-          input = h('select', { class: 'sc-input', id: 'sc-d-' + f.key, 'data-detail': f.key, onchange: () => this.saveDetail(f.key) },
-            h('option', { value: '' }, 'ยังไม่ระบุ'), f.options.map((o) => h('option', { value: o.value }, o.label)));
+          input = h('select', {
+            class: 'sc-pinput sc-empty', id: 'sc-d-' + f.key, 'data-detail': f.key,
+            onchange: () => { input.classList.toggle('sc-empty', !input.value); this.saveDetail(f.key); },
+          }, h('option', { value: '' }, 'ยังไม่ระบุ'), f.options.map((o) => h('option', { value: o.value }, o.label)));
         } else {
           input = h('input', {
-            class: 'sc-input', id: 'sc-d-' + f.key, type: 'text', placeholder: f.placeholder || 'ยังไม่ระบุ', 'data-detail': f.key, autocomplete: 'off', maxlength: '200',
+            class: 'sc-pinput', id: 'sc-d-' + f.key, type: 'text', placeholder: f.placeholder || 'ยังไม่ระบุ', 'data-detail': f.key, autocomplete: 'off', maxlength: '200',
             onblur: () => this.saveDetail(f.key),
             onkeydown: (e) => { if (e.key === 'Enter') input.blur(); if (e.key === 'Escape') { input.value = input.dataset.saved || ''; input.blur(); } },
           });
         }
+        const r = this.propRow({ label: f.label, input, lockKey: 'details.' + f.key });
         this.detailInputs[f.key] = input;
-        this.detailStates[f.key] = { state, lock };
-        // An odd field count leaves the last one alone on its row: let it span the card.
-        const wide = fields.length % 2 === 1 && i === fields.length - 1;
-        grid.append(h('div', { class: 'sc-field' + (wide ? ' sc-wide' : '') },
-          h('div', { class: 'sc-label' }, h('label', { for: 'sc-d-' + f.key }, f.label), lock, state),
-          input));
-      });
+        this.detailStates[f.key] = { state: r.state, lock: r.lock };
+        props.append(r.row);
+      }
       fill(this.secDetails,
         h('div', { class: 'sc-sec-head' }, h('h2', { class: 'sc-sec-title' }, 'ความต้องการ')),
-        h('div', { class: 'sc-sec-body' }, grid));
+        h('div', { class: 'sc-sec-body' }, props));
     }
 
     syncDetails() {
@@ -859,6 +1119,7 @@
           input.append(h('option', { value: server, 'data-extra': '' }, server));
         }
         if (document.activeElement !== input) input.value = server;
+        if (f.type === 'select') input.classList.toggle('sc-empty', !input.value);
         input.dataset.saved = server;
         this.detailStates[f.key].lock.hidden = !locked.includes('details.' + f.key);
       }
@@ -869,19 +1130,16 @@
       const st = this.detailStates[key].state;
       const value = input.value.trim();
       if (value === (input.dataset.saved || '')) { if (input.tagName === 'INPUT') input.value = value; return; }
-      st.className = 'sc-state';
-      st.textContent = 'กำลังบันทึก…';
+      markState(st, 'saving');
       try {
         await this.patchLead({ details: { [key]: value || null } });
-        st.className = 'sc-state sc-ok';
-        st.textContent = 'บันทึกแล้ว';
-        setTimeout(() => { if (st.textContent === 'บันทึกแล้ว') st.textContent = ''; }, 1800);
+        markState(st, 'ok');
         this.syncDetails();
         this.app.notifyChanged();
       } catch (err) {
-        st.className = 'sc-state sc-err';
-        st.textContent = 'บันทึกไม่สำเร็จ';
+        markState(st, 'err');
         input.value = input.dataset.saved || '';
+        if (input.tagName === 'SELECT') input.classList.toggle('sc-empty', !input.value);
         this.app.toast(err.message, 'err');
       }
     }
@@ -897,19 +1155,15 @@
       const st = this.cardStates[key].state;
       const value = input.value.trim();
       if (value === (input.dataset.saved || '')) { input.value = value; return; }
-      st.className = 'sc-state';
-      st.textContent = 'กำลังบันทึก…';
+      markState(st, 'saving');
       try {
         await this.patchLead({ [key]: value || null });
-        st.className = 'sc-state sc-ok';
-        st.textContent = 'บันทึกแล้ว';
-        setTimeout(() => { if (st.textContent === 'บันทึกแล้ว') st.textContent = ''; }, 1800);
+        markState(st, 'ok');
         this.syncCard();
         if (key === 'phone') this.reload(true); // same_phone is computed by the server
-        if (key === 'full_name') this.renderHead();
+        if (key === 'full_name' || key === 'phone') this.renderIdent();
       } catch (err) {
-        st.className = 'sc-state sc-err';
-        st.textContent = 'บันทึกไม่สำเร็จ';
+        markState(st, 'err');
         this.app.toast(err.message, 'err');
       }
     }
@@ -938,7 +1192,7 @@
     markDirty() {
       this.orderDirty = true;
       this.summaryText = null;
-      if (this.summaryBox) this.summaryBox.replaceChildren();
+      this.renderSummary();
       if (this.dirtyMark) this.dirtyMark.hidden = false;
       this.updateTotals();
     }
@@ -988,24 +1242,27 @@
 
     renderOrder() {
       const d = this.draft;
-      const statusBadge = d.status
-        ? h('span', { class: 'sc-order-status sc-os-' + d.status, 'data-sc': 'order-status' }, orderStatusLabel(d.status))
-        : h('span', { class: 'sc-order-status', 'data-sc': 'order-status' }, L().order_empty);
-      this.dirtyMark = h('span', { class: 'sc-dirty', hidden: !this.orderDirty }, '● ยังไม่บันทึก');
+      // An order waiting for money or paid sits on the same step as the lead's stage of that name.
+      const mirrorsStage = d.status === 'awaiting_payment' || d.status === 'paid';
+      const statusBadge = h('span', {
+        class: 'sc-order-status sc-os-' + (d.status || 'none'), 'data-sc': 'order-status', 'data-stage-key': mirrorsStage ? d.status : null,
+      }, d.status ? orderStatusLabel(d.status) : L().order_empty);
+      this.dirtyMark = h('span', { class: 'sc-dirty', hidden: !this.orderDirty }, 'ยังไม่บันทึก');
       const head = h('div', { class: 'sc-sec-head' }, h('h2', { class: 'sc-sec-title' }, L().order), this.dirtyMark, statusBadge);
       const body = h('div', { class: 'sc-sec-body' });
-      this.summaryBox = h('div', { 'data-sc': 'summary-box', style: 'display:flex;flex-direction:column;gap:8px' });
+      this.summaryBox = h('div', { 'data-sc': 'summary-box', style: 'display:flex;flex-direction:column;gap:8px', hidden: true });
       this.lineEls = [];
+      this.saveBtn = null;
 
       if (this.orderReadonly) {
         body.append(
-          h('div', { class: 'sc-items' }, d.items.map((it) => h('div', { class: 'sc-row-gap' },
-            h('span', { style: 'flex:1;min-width:0' }, it.name + ' × ' + nf.format(num(it.qty))),
+          h('div', { class: 'sc-items', 'data-sc': 'order-items' }, d.items.map((it) => h('div', { class: 'sc-item-static' },
+            h('span', null, it.name + ' × ' + nf.format(num(it.qty))),
             h('b', null, money(num(it.qty) * num(it.unit_price)))))),
           this.totalsBlock(),
           h('div', { class: 'sc-row-gap' },
-            h('button', { type: 'button', class: 'sc-btn sc-small', 'data-sc': 'summary', onclick: () => this.showSummary() }, L().summary_button),
-            h('button', { type: 'button', class: 'sc-btn sc-small', 'data-sc': 'order-new', onclick: () => { this.draft = this.blankDraft(); this.orderReadonly = false; this.renderOrder(); } }, icon('plus'), 'สร้าง' + L().order + 'ใหม่')),
+            h('button', { type: 'button', class: 'sc-btn', 'data-sc': 'summary', onclick: () => this.showSummary() }, L().summary_button),
+            h('button', { type: 'button', class: 'sc-btn sc-ghost', 'data-sc': 'order-new', onclick: () => { this.draft = this.blankDraft(); this.orderReadonly = false; this.summaryText = null; this.renderOrder(); } }, icon('plus'), 'สร้าง' + L().order + 'ใหม่')),
           this.summaryBox);
         fill(this.secOrder, head, body);
         this.updateTotals();
@@ -1027,10 +1284,10 @@
           if (seq !== searchSeq) return;
           const products = (r.products || []).filter((p) => p.active !== false).slice(0, 20);
           fill(results, products.length
-            ? h('div', null, products.map((p) => h('button', {
+            ? products.map((p) => h('button', {
               type: 'button', class: 'sc-search-item', 'data-product-id': p.id,
               onclick: () => { this.addProduct(p); searchInput.value = ''; results.hidden = true; },
-            }, h('span', null, p.name), h('span', null, money(p.price)))))
+            }, h('span', null, p.name), h('span', null, money(p.price))))
             : h('div', { class: 'sc-search-empty' }, q ? 'ไม่พบ "' + q + '" — ใช้ "เพิ่มรายการเอง" ได้' : 'ยังไม่มี' + L().products + 'ในระบบ เพิ่มได้ที่ตั้งค่า'));
           results.hidden = false;
         } catch (err) {
@@ -1042,7 +1299,7 @@
       searchInput.addEventListener('input', runSearch);
       searchInput.addEventListener('focus', runSearch);
       searchInput.addEventListener('keydown', (e) => { if (e.key === 'Escape') { results.hidden = true; searchInput.blur(); } });
-      const searchWrap = h('div', { class: 'sc-search' }, searchInput, results);
+      const searchWrap = h('div', { class: 'sc-search' }, icon('search'), searchInput, results);
       searchWrap.addEventListener('focusout', () => setTimeout(() => { if (!searchWrap.contains(document.activeElement)) results.hidden = true; }, 120));
 
       // items
@@ -1052,59 +1309,64 @@
         this.lineEls[i] = line;
         const bind = (field, parse) => (e) => { it[field] = parse ? num(e.target.value) : e.target.value; this.markDirty(); };
         items.append(h('div', { class: 'sc-item' },
-          h('input', { class: 'sc-input', type: 'text', value: it.name, placeholder: 'ชื่อรายการ', 'aria-label': 'ชื่อรายการ', oninput: bind('name') }),
-          iconBtn('trash', 'ลบรายการ', () => { d.items.splice(i, 1); this.markDirty(); this.renderOrder(); }),
+          h('div', { class: 'sc-item-top' },
+            h('input', { class: 'sc-pinput', type: 'text', value: it.name, placeholder: 'ชื่อรายการ', 'aria-label': 'ชื่อรายการ', oninput: bind('name') }),
+            iconBtn('trash', 'ลบรายการ', () => { d.items.splice(i, 1); this.markDirty(); this.renderOrder(); })),
           h('div', { class: 'sc-item-line' },
-            h('input', { class: 'sc-input sc-num', type: 'number', min: '0', step: '1', inputmode: 'numeric', value: it.qty, 'aria-label': 'จำนวน', 'data-sc': 'item-qty', oninput: bind('qty', true) }),
+            h('input', { class: 'sc-input sc-num sc-qty', type: 'number', min: '0', step: '1', inputmode: 'numeric', value: it.qty, 'aria-label': 'จำนวน', 'data-sc': 'item-qty', oninput: bind('qty', true) }),
             h('span', { class: 'sc-times' }, '×'),
-            h('input', { class: 'sc-input sc-num', type: 'number', min: '0', step: 'any', inputmode: 'decimal', value: it.unit_price, 'aria-label': 'ราคาต่อหน่วย', 'data-sc': 'item-price', oninput: bind('unit_price', true) }),
+            h('input', { class: 'sc-input sc-num sc-price', type: 'number', min: '0', step: 'any', inputmode: 'decimal', value: it.unit_price, 'aria-label': 'ราคาต่อหน่วย', 'data-sc': 'item-price', oninput: bind('unit_price', true) }),
             line)));
       });
       if (!d.items.length) items.append(h('div', { class: 'sc-muted sc-small' }, 'ยังไม่มีรายการ ค้นหา' + L().product + 'ด้านบน หรือเพิ่มรายการเอง'));
 
-      const field = (label, control) => h('label', { class: 'sc-field' }, h('span', { class: 'sc-label' }, label), control);
+      // money and terms, as property rows
+      const prop = (label, control, unit) => h('label', { class: 'sc-prop' },
+        h('span', { class: 'sc-prop-label' }, label),
+        control,
+        unit ? h('span', { class: 'sc-prop-end' }, h('span', { class: 'sc-prop-unit' }, unit)) : null);
       const numInput = (key, sc) => h('input', {
-        class: 'sc-input sc-num', type: 'number', min: '0', step: 'any', inputmode: 'decimal', value: d[key] === '' ? '' : d[key], placeholder: '0', 'data-sc': sc,
+        class: 'sc-pinput sc-num', type: 'number', min: '0', step: 'any', inputmode: 'decimal', value: d[key] === '' ? '' : d[key], placeholder: '0', 'data-sc': sc,
         oninput: (e) => { d[key] = e.target.value === '' ? (key === 'deposit_amount' ? '' : 0) : num(e.target.value); this.markDirty(); },
       });
       // One way to pay means there is nothing to choose: the selector is left out and that way is saved.
       const methods = CONFIG.payment_methods;
       const paySelect = methods.length > 1
-        ? h('select', { class: 'sc-input', 'data-sc': 'order-payment', onchange: (e) => { d.payment_method = e.target.value; this.markDirty(); } },
-          h('option', { value: '' }, 'ยังไม่ระบุ'), methods.map((p) => h('option', { value: p.key }, p.label)))
+        ? h('select', {
+          class: 'sc-pinput', 'data-sc': 'order-payment',
+          onchange: (e) => { d.payment_method = e.target.value; e.target.classList.toggle('sc-empty', !e.target.value); this.markDirty(); },
+        }, h('option', { value: '' }, 'ยังไม่ระบุ'), methods.map((p) => h('option', { value: p.key }, p.label)))
         : null;
-      if (paySelect) paySelect.value = d.payment_method || '';
-
-      // Two fields to a row; with an odd count the last one takes the full width.
-      const moneyFields = [
-        field('ส่วนลด (บาท)', numInput('discount', 'order-discount')),
-        this.showShipping() ? field('ค่าจัดส่ง (บาท)', numInput('shipping_fee', 'order-shipping')) : null,
-        paySelect ? field('วิธีชำระ', paySelect) : null,
-        field('มัดจำ (บาท)', numInput('deposit_amount', 'order-deposit')),
-      ].filter(Boolean);
-      const moneyRows = [];
-      for (let i = 0; i < moneyFields.length; i += 2) {
-        moneyRows.push(i + 1 < moneyFields.length ? h('div', { class: 'sc-grid2' }, moneyFields[i], moneyFields[i + 1]) : moneyFields[i]);
-      }
+      if (paySelect) { paySelect.value = d.payment_method || ''; paySelect.classList.toggle('sc-empty', !paySelect.value); }
+      const terms = h('div', { class: 'sc-props' },
+        prop('ส่วนลด', numInput('discount', 'order-discount'), 'บาท'),
+        this.showShipping() ? prop('ค่าจัดส่ง', numInput('shipping_fee', 'order-shipping'), 'บาท') : null,
+        prop('มัดจำ', numInput('deposit_amount', 'order-deposit'), 'บาท'),
+        paySelect ? prop('วิธีชำระ', paySelect) : null,
+        prop('หมายเหตุ', h('input', {
+          class: 'sc-pinput', type: 'text', value: d.note, 'aria-label': 'หมายเหตุ' + L().order, 'data-sc': 'order-note',
+          placeholder: CONFIG.profile === 'retail' ? 'เช่น สี / ความจุ / นัดรับ' : 'เช่น เงื่อนไข / วันนัด',
+          oninput: (e) => { d.note = e.target.value; this.markDirty(); },
+        })));
 
       this.saveBtn = h('button', { type: 'button', class: 'sc-btn sc-primary', 'data-sc': 'order-save', onclick: () => this.saveOrder() }, 'บันทึก' + L().order);
-      const statusRow = h('div', { class: 'sc-row-gap', 'data-sc': 'order-status-actions' });
+      const statusSeg = h('div', { class: 'sc-seg', role: 'group', 'aria-label': 'สถานะ' + L().order, 'data-sc': 'order-status-actions' });
       if (d.status !== 'awaiting_payment') {
-        statusRow.append(h('button', { type: 'button', class: 'sc-btn sc-small', 'data-sc': 'order-await', onclick: () => this.setOrderStatus('awaiting_payment') }, 'ตั้งเป็น' + stageLabel('awaiting_payment')));
+        statusSeg.append(h('button', { type: 'button', class: 'sc-btn', 'data-sc': 'order-await', onclick: () => this.setOrderStatus('awaiting_payment') }, 'ตั้งเป็น' + stageLabel('awaiting_payment')));
       }
-      statusRow.append(h('button', { type: 'button', class: 'sc-btn sc-small', 'data-sc': 'order-paid', onclick: () => this.setOrderStatus('paid') }, 'ยืนยัน' + stageLabel('paid')));
-      if (d.id) statusRow.append(h('button', { type: 'button', class: 'sc-btn sc-small sc-danger', 'data-sc': 'order-cancel', onclick: () => this.setOrderStatus('cancelled') }, 'ยกเลิก'));
+      statusSeg.append(h('button', { type: 'button', class: 'sc-btn', 'data-sc': 'order-paid', onclick: () => this.setOrderStatus('paid') }, 'ยืนยัน' + stageLabel('paid')));
+      if (d.id) statusSeg.append(h('button', { type: 'button', class: 'sc-btn sc-danger', 'data-sc': 'order-cancel', onclick: () => this.setOrderStatus('cancelled') }, 'ยกเลิก'));
 
       body.append(
         searchWrap,
         items,
         h('div', null, h('button', { type: 'button', class: 'sc-btn sc-small sc-ghost', 'data-sc': 'item-add', onclick: () => { d.items.push({ product_id: null, name: '', qty: 1, unit_price: 0 }); this.markDirty(); this.renderOrder(); const ins = this.secOrder.querySelectorAll('.sc-item input[type=text]'); if (ins.length) ins[ins.length - 1].focus(); } }, icon('plus'), 'เพิ่มรายการเอง')),
-        ...moneyRows,
-        field('หมายเหตุ' + L().order, h('input', { class: 'sc-input', type: 'text', value: d.note, placeholder: CONFIG.profile === 'retail' ? 'เช่น สี / ความจุ / นัดรับ' : 'เช่น เงื่อนไข / วันนัด', oninput: (e) => { d.note = e.target.value; this.markDirty(); } })),
+        terms,
         this.totalsBlock(),
         h('div', { class: 'sc-row-gap' }, this.saveBtn, h('button', { type: 'button', class: 'sc-btn', 'data-sc': 'summary', onclick: () => this.showSummary() }, L().summary_button)),
-        statusRow,
-        this.summaryBox);
+        this.summaryBox,
+        h('div', { class: 'sc-seg-label' }, 'เปลี่ยนสถานะ' + L().order),
+        statusSeg);
       fill(this.secOrder, head, body);
       this.updateTotals();
       this.renderSummary();
@@ -1145,6 +1407,7 @@
         this.b.order = r.order;
         this.initDraft();
         this.renderOrder();
+        this.renderTabs();
         if (!silent) this.app.toast('บันทึก' + L().order + 'แล้ว ยอดรวม ' + money(r.order.total), 'ok');
         this.reload(true); // slip match and draft stage can change with the order
         return true;
@@ -1206,30 +1469,46 @@
       }
     }
 
+    /**
+     * The summary preview. While it shows, sending it is the one main action of the tab,
+     * so the save button (there is nothing left to save) steps back.
+     */
     renderSummary() {
       if (!this.summaryBox) return;
-      if (this.summaryText == null) { this.summaryBox.replaceChildren(); return; }
-      fill(this.summaryBox, 
-        h('div', { class: 'sc-label' }, 'ข้อความสรุป (สร้างจาก' + L().order + 'ที่บันทึก ยอดตรงเสมอ)'),
-        h('blockquote', { class: 'sc-quote sc-plain', 'data-sc': 'summary-text' }, this.summaryText),
+      const has = this.summaryText != null;
+      this.summaryBox.hidden = !has;
+      if (this.saveBtn) this.saveBtn.classList.toggle('sc-primary', !has);
+      if (!has) { this.summaryBox.replaceChildren(); return; }
+      fill(this.summaryBox,
+        h('div', { class: 'sc-bubble-label' }, 'ข้อความสรุป (สร้างจาก' + L().order + 'ที่บันทึก ยอดตรงเสมอ)'),
+        h('div', { class: 'sc-bubble sc-long', 'data-sc': 'summary-text' }, this.summaryText),
         this.textActions(() => this.summaryText, 'summary'));
     }
 
     // ---- notes
     buildNotesShell() {
-      this.notesList = h('div', { class: 'sc-notes', 'data-sc': 'notes-list' });
+      this.notesList = h('div', { class: 'sc-tl', 'data-sc': 'notes-list' });
       this.noteInput = h('textarea', {
-        class: 'sc-input', rows: '2', placeholder: 'จดโน้ตถึงทีม… (Ctrl/⌘ + Enter เพื่อบันทึก)', 'aria-label': 'โน้ตใหม่', 'data-sc': 'note-input',
+        class: 'sc-composer-input', rows: '1', placeholder: 'จดโน้ตถึงทีม…', 'aria-label': 'โน้ตใหม่', 'data-sc': 'note-input',
+        oninput: () => autoGrow(this.noteInput),
         onkeydown: (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); this.addNote(); } },
       });
-      this.notePin = h('input', { type: 'checkbox' });
+      this.notePin = h('button', {
+        type: 'button', class: 'sc-iconbtn sc-pin-toggle', 'aria-pressed': 'false', title: 'ปักหมุดโน้ตนี้ไว้บนสุด', 'aria-label': 'ปักหมุด', 'data-sc': 'note-pin',
+        onclick: () => this.notePin.setAttribute('aria-pressed', this.notePin.getAttribute('aria-pressed') === 'true' ? 'false' : 'true'),
+      }, icon('pin'));
       this.noteBtn = h('button', { type: 'button', class: 'sc-btn sc-small sc-primary', 'data-sc': 'note-add', onclick: () => this.addNote() }, 'บันทึกโน้ต');
-      this.notesCount = h('span', { class: 'sc-muted sc-small' });
-      fill(this.secNotes, 
+      this.notesCount = h('span', { class: 'sc-sec-side' });
+      fill(this.secNotes,
         h('div', { class: 'sc-sec-head' }, h('h2', { class: 'sc-sec-title' }, 'โน้ต'), this.notesCount),
         h('div', { class: 'sc-sec-body' },
-          this.noteInput,
-          h('div', { class: 'sc-row-gap' }, h('label', { class: 'sc-check' }, this.notePin, 'ปักหมุด'), h('span', { class: 'sc-spacer' }), this.noteBtn),
+          h('div', { class: 'sc-composer' },
+            this.noteInput,
+            h('div', { class: 'sc-composer-bar' },
+              this.notePin,
+              h('span', { class: 'sc-hint sc-kbd' }, 'Ctrl/⌘ + Enter เพื่อบันทึก'),
+              h('span', { class: 'sc-spacer' }),
+              this.noteBtn)),
           this.notesList));
     }
 
@@ -1241,15 +1520,22 @@
       this.notesCount.textContent = notes.length ? notes.length + ' รายการ' : '';
       const me = this.app.me;
       fill(this.notesList, notes.length
-        ? h('div', { class: 'sc-notes' }, notes.map((n) => h('div', { class: 'sc-note' + (n.pinned ? ' sc-pinned' : ''), 'data-note-id': n.id },
-          h('div', { class: 'sc-note-head' },
-            h('span', { class: 'sc-kind sc-kind-' + n.kind }, NOTE_KIND[n.kind] || n.kind),
-            n.pinned ? icon('pin') : null,
-            h('span', null, [n.author_name, relTime(n.created_at)].filter(Boolean).join(' · ')),
-            n.kind === 'staff' && me && n.author_name === me.name
-              ? iconBtn('trash', 'ลบโน้ต', () => this.deleteNote(n), 'sc-note-del')
-              : null),
-          h('div', { class: 'sc-note-body' }, n.body))))
+        ? notes.map((n) => {
+          const kind = String(n.kind || '').replace(/[^a-z0-9_]/gi, '');
+          const kindLabel = NOTE_KIND[n.kind] || n.kind;
+          return h('div', { class: 'sc-note sc-kind-' + kind + (n.pinned ? ' sc-pinned' : ''), 'data-note-id': n.id },
+            h('span', { class: 'sc-note-dot', 'aria-hidden': 'true' }),
+            h('div', { class: 'sc-note-head' },
+              // Notes written by the agent or the system carry the product's name in the data;
+              // staff read them as "the assistant" / "the system" whatever the brand is.
+              h('b', null, n.kind === 'ai' ? 'ผู้ช่วย AI' : n.kind === 'system' ? 'ระบบ' : (n.author_name || kindLabel)),
+              n.pinned ? h('span', { class: 'sc-note-pin', title: 'ปักหมุด' }, icon('pin')) : null,
+              h('span', null, [n.kind === 'staff' && n.author_name ? kindLabel : '', relTime(n.created_at)].filter(Boolean).join(' · ')),
+              n.kind === 'staff' && me && n.author_name === me.name
+                ? iconBtn('trash', 'ลบโน้ต', () => this.deleteNote(n), 'sc-note-del')
+                : null),
+            h('div', { class: 'sc-note-body' }, n.body));
+        })
         : h('div', { class: 'sc-muted sc-small' }, 'ยังไม่มีโน้ต — Agent จะสรุปให้เมื่อลูกค้าคุยเพิ่ม'));
     }
 
@@ -1258,11 +1544,13 @@
       if (!body) { this.noteInput.focus(); return; }
       this.noteBtn.disabled = true;
       try {
-        const r = await this.api.post('/api/leads/' + this.lead.id + '/notes', { body, pinned: this.notePin.checked });
+        const r = await this.api.post('/api/leads/' + this.lead.id + '/notes', { body, pinned: this.notePin.getAttribute('aria-pressed') === 'true' });
         this.b.notes = [r.note].concat(this.b.notes || []);
         this.noteInput.value = '';
-        this.notePin.checked = false;
+        autoGrow(this.noteInput);
+        this.notePin.setAttribute('aria-pressed', 'false');
         this.renderNotes();
+        this.renderTabs();
       } catch (err) {
         this.app.toast('บันทึกโน้ตไม่สำเร็จ: ' + err.message, 'err');
       } finally {
@@ -1277,6 +1565,7 @@
         await this.api.del('/api/notes/' + n.id);
         this.b.notes = (this.b.notes || []).filter((x) => x.id !== n.id);
         this.renderNotes();
+        this.renderTabs();
       } catch (err) {
         this.app.toast('ลบโน้ตไม่สำเร็จ: ' + err.message, 'err');
       }
@@ -1294,11 +1583,11 @@
       for (const m of media) counts[m.category] = (counts[m.category] || 0) + 1;
       if (this.albumFilter !== 'all' && !counts[this.albumFilter]) this.albumFilter = 'all';
       const chip = (id, label, n) => h('button', {
-        type: 'button', class: 'sc-chip' + (this.albumFilter === id ? ' sc-on' : ''), 'data-cat': id,
+        type: 'button', class: 'sc-fchip' + (this.albumFilter === id ? ' sc-on' : ''), 'data-cat': id,
         'aria-pressed': this.albumFilter === id ? 'true' : 'false',
         onclick: () => { this.albumFilter = id; this.renderAlbum(); },
       }, label, h('span', { class: 'sc-count' }, n));
-      const filters = h('div', { class: 'sc-chips', 'data-sc': 'album-filters' },
+      const filters = h('div', { class: 'sc-fchips', role: 'group', 'aria-label': 'กรองตามหมวดรูป', 'data-sc': 'album-filters' },
         chip('all', 'ทั้งหมด', media.length),
         CONFIG.media_categories.filter((c) => counts[c.key]).map((c) => chip(c.key, c.label, counts[c.key])));
       const list = this.filteredMedia();
@@ -1312,8 +1601,8 @@
         }
         return btn;
       }));
-      fill(this.secAlbum, 
-        h('div', { class: 'sc-sec-head' }, h('h2', { class: 'sc-sec-title' }, 'อัลบั้ม')),
+      fill(this.secAlbum,
+        h('div', { class: 'sc-sec-head' }, h('h2', { class: 'sc-sec-title' }, 'อัลบั้ม'), media.length ? h('span', { class: 'sc-sec-side' }, media.length + ' รูป') : null),
         h('div', { class: 'sc-sec-body' }, media.length
           ? [filters, grid]
           : h('div', { class: 'sc-muted sc-small' }, 'ยังไม่มีรูป — รูปที่ลูกค้าส่งมาจะถูกแยกหมวดให้อัตโนมัติ')));
@@ -1408,6 +1697,7 @@
         const i = list.findIndex((x) => x.id === m.id);
         if (i >= 0) list[i] = r.media;
         this.renderAlbum();
+        this.renderTabs();
         this.app.toast('บันทึกแล้ว', 'ok');
       } catch (err) {
         this.app.toast('บันทึกรูปไม่สำเร็จ: ' + err.message, 'err');
@@ -1419,25 +1709,32 @@
     renderFollow() {
       const l = this.lead;
       const due = isPast(l.follow_up_at);
-      const status = l.follow_up_at
-        ? h('div', { class: 'sc-notice' + (due ? ' sc-danger' : ''), 'data-sc': 'followup-status' },
-          due ? h('b', null, 'เลยกำหนดแล้ว ') : 'ตามอีกครั้ง ', fmtDateTime(l.follow_up_at))
-        : h('div', { class: 'sc-muted sc-small', 'data-sc': 'followup-status' }, 'ยังไม่ได้ตั้งเวลาตามลูกค้า');
+      const status = h('span', { class: 'sc-follow-status' + (l.follow_up_at && due ? ' sc-due' : ''), 'data-sc': 'followup-status' },
+        l.follow_up_at ? [icon('clock'), (due ? 'เลยกำหนด ' : 'ตามอีกครั้ง ') + fmtDateTime(l.follow_up_at)] : 'ยังไม่ได้ตั้งเวลา');
       const custom = h('input', {
-        class: 'sc-input', type: 'datetime-local', 'aria-label': 'กำหนดเวลาเอง', style: 'max-width:210px',
+        class: 'sc-input sc-follow-custom', type: 'datetime-local', 'aria-label': 'กำหนดเวลาเอง', title: 'กำหนดเวลาเอง',
         onchange: (e) => { const d = toDate(e.target.value); if (d) this.setFollow(d); },
       });
       const in3h = () => new Date(Date.now() + 3 * 3600 * 1000);
       const tomorrow10 = () => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(10, 0, 0, 0); return d; };
-      fill(this.secFollow, 
-        h('div', { class: 'sc-sec-head' }, h('h2', { class: 'sc-sec-title' }, 'ตามลูกค้า')),
+      // The custom time field is left alone while someone is picking a time in it.
+      if (this.followCustom && document.activeElement === this.followCustom) {
+        this.followStatus.replaceWith(status);
+        this.followStatus = status;
+        this.followClear.hidden = !l.follow_up_at;
+        return;
+      }
+      this.followStatus = status;
+      this.followCustom = custom;
+      this.followClear = h('button', { type: 'button', class: 'sc-btn sc-small sc-ghost', 'data-sc': 'follow-clear', hidden: !l.follow_up_at, onclick: () => this.setFollow(null) }, 'ล้าง');
+      fill(this.secFollow,
+        h('div', { class: 'sc-sec-head' }, h('h2', { class: 'sc-sec-title' }, 'ตามลูกค้า'), status),
         h('div', { class: 'sc-sec-body' },
-          status,
           h('div', { class: 'sc-row-gap' },
             h('button', { type: 'button', class: 'sc-btn sc-small', 'data-sc': 'follow-3h', onclick: () => this.setFollow(in3h()) }, '+3 ชม.'),
             h('button', { type: 'button', class: 'sc-btn sc-small', 'data-sc': 'follow-tomorrow', onclick: () => this.setFollow(tomorrow10()) }, 'พรุ่งนี้ 10:00'),
-            l.follow_up_at ? h('button', { type: 'button', class: 'sc-btn sc-small sc-ghost', 'data-sc': 'follow-clear', onclick: () => this.setFollow(null) }, 'ล้าง') : null),
-          custom));
+            custom,
+            this.followClear)));
     }
 
     async setFollow(date) {
@@ -1507,13 +1804,14 @@
       const list = h('div', { class: 'sc-list', 'data-sc': 'candidates' });
       const showCandidates = (leads, emptyText) => {
         fill(list, leads.length
-          ? h('div', null, leads.map((c) => h('div', { class: 'sc-row', style: 'cursor:default', 'data-lead-id': c.id },
-            avatar(c, true),
+          ? leads.map((c) => h('div', { class: 'sc-row', style: 'cursor:default', 'data-lead-id': c.id },
+            avatar(c),
             h('div', { class: 'sc-row-main' },
-              h('div', { class: 'sc-row-top' }, h('span', { class: 'sc-row-name' }, leadName(c)), stageTag(c.stage)),
-              h('div', { class: 'sc-row-bottom' }, h('span', { class: 'sc-row-preview' }, [c.full_name, c.phone, c.last_message_at ? 'ล่าสุด ' + relTime(c.last_message_at) : ''].filter(Boolean).join(' · ')))),
-            h('button', { type: 'button', class: 'sc-btn sc-small sc-primary', 'data-sc': 'link-chat', onclick: (e) => this.link(c, e.currentTarget) }, 'ผูกกับแชทนี้'))))
-          : h('div', { class: 'sc-muted sc-small', style: 'padding:10px 12px' }, emptyText));
+              h('div', { class: 'sc-row-name' }, leadName(c)),
+              h('div', { class: 'sc-row-preview' }, [c.full_name, c.phone, c.last_message_at ? 'ล่าสุด ' + relTime(c.last_message_at) : ''].filter(Boolean).join(' · ') || '—'),
+              stageTag(c.stage)),
+            h('button', { type: 'button', class: 'sc-btn sc-small', 'data-sc': 'link-chat', onclick: (e) => this.link(c, e.currentTarget) }, 'ผูกกับแชทนี้')))
+          : h('div', { class: 'sc-muted sc-small', style: 'padding:12px 14px' }, emptyText));
       };
       const candidates = b.candidates || [];
       showCandidates(candidates, 'ไม่พบลูกค้าที่ชื่อตรงกับแชทนี้');
@@ -1533,10 +1831,10 @@
       fill(this.el, h('div', { class: 'sc-view', 'data-sc': 'unknown-chat' },
         h('section', { class: 'sc-card' },
           h('div', { class: 'sc-sec-body' },
-            h('b', null, 'ยังไม่มีการ์ดของแชทนี้' + (chat.name ? ' (' + chat.name + ')' : '')),
-            h('div', { class: 'sc-muted' }, 'ลูกค้าคนนี้ยังไม่ได้ส่งข้อความเข้ามาตั้งแต่เชื่อม ' + BRAND.name + ' กับ LINE OA — เมื่อลูกค้าทักมาครั้งถัดไป ระบบจะสร้างการ์ดให้อัตโนมัติ'),
-            h('div', { class: 'sc-muted' }, 'ถ้าลูกค้าเคยทักมาแล้วแต่การ์ดไม่ขึ้น ให้ผูกแชทนี้กับการ์ดที่มีอยู่:'),
-            search)),
+            h('div', { class: 'sc-setup-title' }, 'ยังไม่มีการ์ดของแชทนี้' + (chat.name ? ' (' + chat.name + ')' : '')),
+            h('div', { class: 'sc-setup-help' }, 'ลูกค้าคนนี้ยังไม่ได้ส่งข้อความเข้ามาตั้งแต่เชื่อม ' + BRAND.name + ' กับ LINE OA — เมื่อลูกค้าทักมาครั้งถัดไป ระบบจะสร้างการ์ดให้อัตโนมัติ'),
+            h('div', { class: 'sc-setup-help' }, 'ถ้าลูกค้าเคยทักมาแล้วแต่การ์ดไม่ขึ้น ให้ผูกแชทนี้กับการ์ดที่มีอยู่:'),
+            h('div', { class: 'sc-searchbox' }, icon('search'), search))),
         h('section', { class: 'sc-card', style: 'overflow:hidden' }, list),
         h('div', null, h('button', { type: 'button', class: 'sc-btn sc-small sc-ghost', onclick: () => this.load() }, icon('refresh'), 'ตรวจอีกครั้ง'))));
     }
@@ -1554,20 +1852,13 @@
     }
   }
 
-  /** One lead opened by id, with a back bar. */
+  /** One lead opened by id. The lead's own identity bar carries the back button. */
   class LeadPage {
     constructor(app, id) {
       this.app = app;
       this.id = id;
       this.leadView = null;
-      this.body = h('div');
-      this.title = h('span', { class: 'sc-sub', style: 'flex:1' });
-      this.el = h('div', { 'data-sc': 'lead-page' },
-        h('div', { class: 'sc-backbar' },
-          h('button', { type: 'button', class: 'sc-btn sc-ghost', 'data-sc': 'back', onclick: () => app.back() }, icon('back'), 'กลับ'),
-          this.title,
-          iconBtn('refresh', 'รีเฟรช', () => this.load())),
-        this.body);
+      this.el = h('div', { 'data-sc': 'lead-page' });
       this.load();
     }
     onShow() { if (this.leadView) this.leadView.start(); }
@@ -1575,18 +1866,25 @@
     destroy() { this.onHide(); if (this.leadView && this.leadView.lightbox) this.leadView.lightbox.close(); }
     refresh() { return this.load(); }
 
+    /** Shown while there is no lead on screen to carry the back button. */
+    backBar() {
+      const back = iconBtn('back', 'กลับ', () => this.app.back());
+      back.dataset.sc = 'back';
+      return h('div', { class: 'sc-backbar' }, back, h('span', { class: 'sc-backbar-title' }, 'ลูกค้า'), iconBtn('refresh', 'รีเฟรช', () => this.load()));
+    }
+
     async load() {
       if (this.leadView) { this.leadView.stop(); this.leadView = null; }
-      fill(this.body, skeleton());
+      fill(this.el, this.backBar(), skeleton());
       try {
         const b = await this.app.api.get('/api/leads/' + this.id);
         if (!b.lead) throw new ApiError(404, 'not_found', STATUS_TEXT[404]);
-        this.leadView = new LeadView(this.app, b, {});
-        fill(this.body, this.leadView.el);
+        this.leadView = new LeadView(this.app, b, { back: () => this.app.back() });
+        fill(this.el, this.leadView.el);
         if (this.app.top() === this) this.leadView.start();
       } catch (err) {
         if (err.status === 401) return;
-        fill(this.body, h('div', { class: 'sc-view' }, errorState(err, () => this.load())));
+        fill(this.el, this.backBar(), h('div', { class: 'sc-view' }, errorState(err, () => this.load())));
       }
     }
   }
@@ -1604,15 +1902,20 @@
       this.timer = null;
       this.showBack = !!(opts && opts.back);
 
-      this.tabsEl = h('div', { class: 'sc-tabs', role: 'tablist', 'data-sc': 'inbox-tabs' });
+      this.tabsEl = h('div', { class: 'sc-tabs', role: 'tablist', 'aria-label': 'กรองรายชื่อลูกค้า', 'data-sc': 'inbox-tabs' });
       this.listEl = h('div', { 'data-sc': 'inbox-list' });
       this.search = h('input', { class: 'sc-input', type: 'search', placeholder: 'ค้นหาชื่อ / เบอร์โทร', 'aria-label': 'ค้นหาลูกค้า', 'data-sc': 'inbox-search' });
       this.search.addEventListener('input', debounce(() => { this.q = this.search.value.trim(); this.load(); }, 300));
+      let back = null;
+      if (this.showBack) {
+        back = iconBtn('back', 'กลับ', () => app.back());
+        back.dataset.sc = 'back';
+      }
       const tools = h('div', { class: 'sc-inbox-tools' },
-        h('div', { class: 'sc-row-gap', style: 'flex-wrap:nowrap' },
-          this.showBack ? h('button', { type: 'button', class: 'sc-btn sc-ghost', 'data-sc': 'back', onclick: () => app.back() }, icon('back'), 'กลับ') : null,
-          h('div', { class: 'sc-searchbox', style: 'flex:1' }, icon('search'), this.search),
-          iconBtn('refresh', 'รีเฟรช', () => this.load(), 'sc-inbox-refresh')),
+        h('div', { class: 'sc-inbox-top' },
+          back,
+          h('div', { class: 'sc-searchbox' }, icon('search'), this.search),
+          iconBtn('refresh', 'รีเฟรช', () => this.load())),
         this.tabsEl);
       this.el = h('div', { 'data-sc': 'inbox' }, tools, this.listEl);
       this.renderTabs();
@@ -1631,15 +1934,17 @@
 
     renderTabs() {
       const total = Object.values(this.counts).reduce((s, n) => s + (Number(n) || 0), 0);
-      const tab = (id, label, n, cls) => h('button', {
-        type: 'button', role: 'tab', class: 'sc-chip ' + (cls || '') + (this.tab === id ? ' sc-on' : ''),
+      const tab = (id, label, n) => h('button', {
+        type: 'button', role: 'tab', class: 'sc-tab' + (this.tab === id ? ' sc-on' : ''),
         'aria-selected': this.tab === id ? 'true' : 'false', 'data-tab': id,
         onclick: () => { if (this.tab !== id) { this.tab = id; this.renderTabs(); this.load(); } },
       }, label, n != null ? (id === 'due' && n > 0 ? h('span', { class: 'sc-badge' }, n) : h('span', { class: 'sc-count' }, n)) : null);
-      fill(this.tabsEl, 
+      const left = this.tabsEl.scrollLeft;
+      fill(this.tabsEl,
         tab('all', 'ทั้งหมด', this.loadedOnce ? total : null),
-        tab('due', 'ต้องตาม', this.loadedOnce ? this.dueCount : null, 'sc-due'),
-        CONFIG.stages.map((s) => tab(s.key, s.label, this.loadedOnce ? (this.counts[s.key] || 0) : null, 'sc-st-' + s.key)));
+        tab('due', 'ต้องตาม', this.loadedOnce ? this.dueCount : null),
+        CONFIG.stages.map((s) => tab(s.key, s.label, this.loadedOnce ? (this.counts[s.key] || 0) : null)));
+      this.tabsEl.scrollLeft = left;
     }
 
     /** What the customer is after, when the profile records it: "หาเช่า · Kave Town Colony". */
@@ -1663,8 +1968,8 @@
       if (!opts.quiet && !opts.more) {
         fill(this.listEl, h('div', { class: 'sc-list', 'aria-busy': 'true', 'data-sc': 'loading' },
           [0, 1, 2, 3, 4].map(() => h('div', { class: 'sc-row', style: 'cursor:default' },
-            h('div', { class: 'sc-skel', style: 'width:36px;height:36px;border-radius:50%;flex:none' }),
-            h('div', { class: 'sc-row-main', style: 'display:flex;flex-direction:column;gap:6px' },
+            h('div', { class: 'sc-skel', style: 'width:40px;height:40px;border-radius:50%;flex:none' }),
+            h('div', { class: 'sc-row-main', style: 'gap:7px' },
               h('div', { class: 'sc-skel sc-skel-line', style: 'width:45%' }),
               h('div', { class: 'sc-skel sc-skel-line', style: 'width:75%' }))))));
       }
@@ -1701,16 +2006,16 @@
         return;
       }
       const rows = this.leads.map((l) => h('button', { type: 'button', class: 'sc-row', 'data-lead-id': l.id, onclick: () => this.app.openLead(l.id) },
-        avatar(l, true),
+        avatar(l),
         h('div', { class: 'sc-row-main' },
-          h('div', { class: 'sc-row-top' },
-            h('span', { class: 'sc-row-name' }, leadName(l)),
-            h('span', { class: 'sc-row-time' }, relTime(l.last_message_at))),
+          h('div', { class: 'sc-row-name' }, leadName(l)),
           this.rowMeta(l),
-          h('div', { class: 'sc-row-bottom' },
-            h('span', { class: 'sc-row-preview' }, l.last_message_preview || l.ai_summary || l.phone || '—'),
+          h('div', { class: 'sc-row-preview' }, l.last_message_preview || l.ai_summary || l.phone || '—')),
+        h('div', { class: 'sc-row-side' },
+          h('span', { class: 'sc-row-time' },
             isPast(l.follow_up_at) ? h('span', { class: 'sc-due-dot', title: 'ถึงเวลาตาม' }, icon('clock'), 'ตาม') : null,
-            stageTag(l.stage)))));
+            relTime(l.last_message_at)),
+          stageTag(l.stage))));
       fill(this.listEl, h('div', { class: 'sc-list' }, rows),
         this.hasMore ? h('div', { style: 'padding:10px' }, h('button', { type: 'button', class: 'sc-btn sc-block', onclick: () => this.load({ more: true }) }, 'โหลดเพิ่ม')) : null);
     }
@@ -1725,18 +2030,20 @@
       this.urlInput = h('input', { class: 'sc-input', type: 'url', value: cfg.baseUrl, placeholder: 'https://xxxx.supabase.co/functions/v1/sidecar', autocomplete: 'off', spellcheck: 'false', 'data-sc': 'cfg-url' });
       this.tokenInput = h('input', { class: 'sc-input', type: 'password', value: cfg.token, placeholder: 'staff token', autocomplete: 'off', spellcheck: 'false', 'data-sc': 'cfg-token' });
       this.msg = h('div', { class: 'sc-notice sc-warn', hidden: !message, 'data-sc': 'cfg-msg' }, message || '');
-      this.btn = h('button', { type: 'submit', class: 'sc-btn sc-primary sc-cta sc-block', 'data-sc': 'cfg-save' }, 'บันทึกและเชื่อมต่อ');
+      this.btn = h('button', { type: 'submit', class: 'sc-btn sc-primary sc-block', 'data-sc': 'cfg-save' }, 'บันทึกและเชื่อมต่อ');
       const logo = brandLogo('landscape', 'auto', 'sc-brand-logo');
       const form = h('form', { class: 'sc-sec-body', onsubmit: (e) => { e.preventDefault(); this.save(); } },
         logo ? h('div', { class: 'sc-brand-head', 'data-sc': 'brand-head' }, logo, BRAND.tagline ? h('div', { class: 'sc-brand-tagline' }, BRAND.tagline) : null) : null,
-        h('div', null, h('b', { style: 'font-size:15px' }, 'เชื่อมต่อ ' + BRAND.name), h('div', { class: 'sc-muted' }, 'ใส่ token ประจำตัวพนักงานที่แอดมินออกให้ (ใส่ครั้งเดียว)')),
+        h('div', null,
+          h('div', { class: 'sc-setup-title' }, 'เชื่อมต่อ ' + BRAND.name),
+          h('div', { class: 'sc-setup-help' }, 'ใส่ token ประจำตัวพนักงานที่แอดมินออกให้ (ใส่ครั้งเดียว)')),
         this.msg,
         editableUrl ? h('label', { class: 'sc-field' }, h('span', { class: 'sc-label' }, 'API URL'), this.urlInput) : null,
         h('label', { class: 'sc-field' }, h('span', { class: 'sc-label' }, 'Staff token'), this.tokenInput),
         this.btn,
         host.relogin ? h('button', { type: 'button', class: 'sc-btn sc-block', onclick: () => host.relogin() }, 'เข้าสู่ระบบด้วย LINE อีกครั้ง') : null,
         host.openOptions ? h('button', { type: 'button', class: 'sc-btn sc-ghost sc-block', onclick: () => host.openOptions() }, 'เปิดหน้าตั้งค่าส่วนขยาย') : null);
-      this.el = h('div', { class: 'sc-view', 'data-sc': 'config' }, h('section', { class: 'sc-card' }, form));
+      this.el = h('div', { class: 'sc-view sc-setup', 'data-sc': 'config' }, h('section', { class: 'sc-card' }, form));
     }
     async save() {
       const cfg = { baseUrl: this.urlInput.value.trim().replace(/\/+$/, ''), token: this.tokenInput.value.trim() };
@@ -1763,11 +2070,13 @@
   class SettingsView {
     constructor(app) {
       this.app = app;
-      this.body = h('div', { class: 'sc-view' }, skeleton());
+      this.body = h('div', { class: 'sc-view' },
+        h('div', { class: 'sc-skel sc-skel-block' }),
+        h('div', { class: 'sc-skel sc-skel-block' }));
+      const back = iconBtn('back', 'กลับ', () => app.back());
+      back.dataset.sc = 'back';
       this.el = h('div', { 'data-sc': 'settings' },
-        h('div', { class: 'sc-backbar' },
-          h('button', { type: 'button', class: 'sc-btn sc-ghost', 'data-sc': 'back', onclick: () => app.back() }, icon('back'), 'กลับ'),
-          h('span', { class: 'sc-sub', style: 'flex:1' }, 'ตั้งค่า')),
+        h('div', { class: 'sc-backbar' }, back, h('span', { class: 'sc-backbar-title' }, 'ตั้งค่า')),
         this.body);
       this.load();
     }
@@ -1798,7 +2107,7 @@
         h('label', { class: 'sc-field' }, h('span', { class: 'sc-label' }, 'ชื่อร้าน'), shopName),
         h('label', { class: 'sc-field' }, h('span', { class: 'sc-label' }, 'วิธีชำระเงิน (ต่อท้ายข้อความสรุป' + L().order + ')'), pay),
         isAdmin
-          ? h('div', null, h('button', { type: 'button', class: 'sc-btn sc-primary sc-small', 'data-sc': 'set-save', onclick: async (e) => {
+          ? h('div', null, h('button', { type: 'button', class: 'sc-btn sc-primary', 'data-sc': 'set-save', onclick: async (e) => {
             const btn = e.currentTarget;
             btn.disabled = true;
             try {
@@ -1809,9 +2118,9 @@
           } }, 'บันทึก'))
           : h('div', { class: 'sc-muted sc-small' }, 'เฉพาะแอดมินแก้ไขได้'));
 
-      const list = h('div', { style: 'display:flex;flex-direction:column;gap:6px', 'data-sc': 'product-list' });
+      const list = h('div', { class: 'sc-prod-list', 'data-sc': 'product-list' });
       const drawProducts = () => {
-        fill(list, products.length ? h('div', { style: 'display:flex;flex-direction:column;gap:6px' }, products.map((p) => {
+        fill(list, products.length ? products.map((p) => {
           const save = async (body) => {
             try {
               const r = await app.api.patch('/api/products/' + p.id, body);
@@ -1823,7 +2132,7 @@
             h('input', { class: 'sc-input', type: 'text', value: p.name, 'aria-label': 'ชื่อ' + L().product, onblur: (e) => { const v = e.target.value.trim(); if (v && v !== p.name) save({ name: v }); } }),
             h('input', { class: 'sc-input sc-num', type: 'number', min: '0', step: 'any', value: p.price, 'aria-label': 'ราคา', onblur: (e) => { const v = num(e.target.value); if (v !== num(p.price)) save({ price: v }); } }),
             h('button', { type: 'button', class: 'sc-btn sc-small' + (p.active === false ? '' : ' sc-ghost'), onclick: () => save({ active: p.active === false }) }, p.active === false ? 'เปิดขาย' : 'ปิด'));
-        })) : h('div', { class: 'sc-muted sc-small' }, 'ยังไม่มี' + L().products + ' เพิ่มรายการแรกด้านล่าง'));
+        }) : h('div', { class: 'sc-muted sc-small' }, 'ยังไม่มี' + L().products + ' เพิ่มรายการแรกด้านล่าง'));
       };
       drawProducts();
       const newName = h('input', { class: 'sc-input', type: 'text', placeholder: 'ชื่อ' + L().product + 'ใหม่', 'aria-label': 'ชื่อ' + L().product + 'ใหม่', 'data-sc': 'prod-name' });
@@ -1842,7 +2151,7 @@
       };
       const catalog = section(CONFIG.profile === 'retail' ? 'สินค้า / บริการ' : L().products, null,
         h('form', { class: 'sc-prod-row', onsubmit: (e) => { e.preventDefault(); addProduct(); } },
-          newName, newPrice, h('button', { type: 'submit', class: 'sc-btn sc-small sc-primary', 'data-sc': 'prod-add' }, icon('plus'), 'เพิ่ม')),
+          newName, newPrice, h('button', { type: 'submit', class: 'sc-btn sc-small', 'data-sc': 'prod-add' }, icon('plus'), 'เพิ่ม')),
         list);
 
       fill(this.body, account, shop, catalog);
@@ -1996,14 +2305,13 @@
     renderTopbar() {
       // A theme whose top bar is dark asks for the light logo whatever the colour scheme.
       const onDark = getComputedStyle(this.root).getPropertyValue('--topbar-logo').trim() === 'dark';
-      const mark = brandLogo('mark', onDark ? 'dark' : 'auto', 'sc-brand-mark');
-      const brand = h('div', { class: 'sc-brand' + (mark ? ' sc-has-mark' : ''), 'data-sc': 'brand' },
-        mark,
+      const brand = h('div', { class: 'sc-brand', 'data-sc': 'brand' },
+        brandLogo('mark', onDark ? 'dark' : 'auto', 'sc-brand-mark'),
         h('b', null, BRAND.name), h('span', null, this.me ? this.me.name : ''));
       const kids = [brand];
       if (this.me && !this.configOpen) {
         if (this.mode === 'panel') {
-          const due = iconBtn('clock', 'ลูกค้าที่ต้องตาม', () => this.openInbox('due'), 'sc-due-btn');
+          const due = iconBtn('clock', 'ลูกค้าที่ต้องตาม', () => this.openInbox('due'));
           due.dataset.sc = 'open-due';
           if (this.dueCount > 0) due.append(h('span', { class: 'sc-badge', 'data-sc': 'due-badge' }, this.dueCount > 99 ? '99+' : this.dueCount));
           const all = iconBtn('list', 'ลูกค้าทั้งหมด', () => this.openInbox('all'));

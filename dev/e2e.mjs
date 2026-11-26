@@ -49,6 +49,14 @@ const lineMessage = (body) => fetch(BASE + '/dev/line-message', {
   method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
 }).then((r) => r.json());
 
+/** The lead tab panels that are in the layout right now. */
+const shownPanels = (scope) => scope.locator('.sc-panel').evaluateAll((els) => els.filter((el) => !el.hidden && el.getClientRects().length).map((el) => el.dataset.panel));
+const stageMenuClosed = async (scope) => (await scope.locator('.sc-stage-menu').count()) === 0 && (await scope.locator('[data-stage]').count()) === 0;
+const openTab = async (scope, tab) => {
+  await scope.locator('[data-tab-view="' + tab + '"]').click();
+  assert((await shownPanels(scope)).join() === tab, 'tab "' + tab + '" shows its panel and hides the others');
+};
+
 const server = spawn(process.execPath, ['dev/server.ts'], {
   cwd: ROOT, env: { ...process.env, PORT: String(PORT) }, stdio: ['ignore', 'pipe', 'pipe'],
 });
@@ -107,13 +115,23 @@ try {
   log('panel shows the new customer with the agent-filled card and note');
 
   // Staff work the lead.
+  const pipe = await panel.locator('[data-sc="stages"] .sc-pipe').evaluate((el) => ({ steps: el.querySelectorAll('i').length, cur: el.querySelectorAll('i.sc-cur').length }));
+  assert(pipe.steps === 7 && pipe.cur === 1, 'pipe has 7 steps with one current step (' + JSON.stringify(pipe) + ')');
+  assert(await stageMenuClosed(panel), 'stage menu starts closed');
+  await panel.locator('[data-sc="stage-toggle"]').click();
+  await panel.locator('.sc-stage-menu').waitFor();
   await panel.locator('[data-stage="quoted"]').click();
   await waitFor(async () => (await api('GET', '/api/leads/' + lead.id)).lead.stage === 'quoted', 'stage saved');
+  await waitFor(() => stageMenuClosed(panel), 'stage menu closes after the choice');
+  assert(await panel.locator('[data-sc="stage-toggle"]').getAttribute('data-stage-key') === 'quoted', 'pill shows the new stage');
+  assert(await panel.locator('[data-tab-view="order"] .sc-tabdot').count() === 0, 'no dot on the order tab before there is an order');
+  await openTab(panel, 'notes');
   await panel.locator('[data-sc="note-input"]').fill('ลูกค้าขอสีดำ');
   await panel.locator('[data-sc="note-input"]').press('Control+Enter');
   await waitFor(async () => (await api('GET', '/api/leads/' + lead.id)).notes.some((n) => n.body === 'ลูกค้าขอสีดำ' && n.kind === 'staff'), 'note stored');
   log('stage change and staff note saved through the real API');
 
+  await openTab(panel, 'order');
   await panel.locator('[data-sc="product-search"]').fill('iPhone');
   await panel.locator('[data-sc="product-results"] .sc-search-item').first().click();
   await panel.locator('[data-sc="order-save"]').click();
@@ -143,6 +161,10 @@ try {
   assert(slipMedia.slip && slipMedia.slip.matches_order === true, 'slip amount matches the order');
   assert(slip.order.status === 'awaiting_payment', 'nothing is marked paid until staff confirm');
   await page.reload();
+  await panel.locator('[data-sc="lead-name"]').waitFor();
+  assert((await shownPanels(panel)).join() === 'overview', 'a fresh page opens the lead on the overview');
+  assert(await panel.locator('[data-tab-view="order"] .sc-tabdot').count() === 1, 'order tab is dotted: an open order with a slip waiting to be confirmed');
+  await openTab(panel, 'album');
   await panel.locator('[data-sc="album-grid"]').waitFor();
   await waitFor(async () => (await panel.locator('[data-sc="album-grid"] img').count()) >= 1, 'slip shows in the album');
   await panel.locator('[data-sc="album"]').scrollIntoViewIfNeeded();

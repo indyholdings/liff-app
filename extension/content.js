@@ -40,7 +40,7 @@
   // Colours of the two things this script draws on the host page. The panel itself is themed by its own CSS.
   const CHROME = {
     globallink: { bg: '#f5f2e9', border: '#bfcbbb', accent: '#193e24' },
-  }[BRAND.theme] || { bg: '#f4f5f7', border: '#cfd4da', accent: '#06c755' };
+  }[BRAND.theme] || { bg: '#f4f5f7', border: '#cfd4da', accent: '#5457e6' };
 
   const PANEL_URL = chrome.runtime.getURL('panel.html');
   const PANEL_ORIGIN = new URL(PANEL_URL).origin;

@@ -52,6 +52,14 @@ const lineMessage = (body) => fetch(BASE + '/dev/line-message', {
   method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
 }).then((r) => r.json());
 
+/** The lead tab panels that are in the layout right now. */
+const shownPanels = (scope) => scope.locator('.sc-panel').evaluateAll((els) => els.filter((el) => !el.hidden && el.getClientRects().length).map((el) => el.dataset.panel));
+const stageMenuClosed = async (scope) => (await scope.locator('.sc-stage-menu').count()) === 0 && (await scope.locator('[data-stage]').count()) === 0;
+const openTab = async (scope, tab) => {
+  await scope.locator('[data-tab-view="' + tab + '"]').click();
+  assert((await shownPanels(scope)).join() === tab, 'tab "' + tab + '" shows its panel and hides the others');
+};
+
 const built = spawnSync(process.execPath, ['scripts/build-brand.mjs', 'globallink'], { cwd: ROOT, encoding: 'utf8' });
 if (built.status !== 0) {
   console.error('brand build failed:\n' + built.stdout + built.stderr);
@@ -112,7 +120,15 @@ try {
   await panel.locator('[data-sc="lead-name"]').waitFor();
   assert((await panel.locator('[data-sc="lead-name"]').textContent()).includes('Ploy'), 'panel shows the seeded lead');
   assert(await panel.locator('html').getAttribute('data-theme') === 'globallink', 'Globallink theme is applied');
-  assert((await panel.locator('[data-sc="stages"]').innerText()).includes('รอมัดจำ'), 'stage chips use the labels served by /api/config');
+  const pipe = await panel.locator('[data-sc="stages"] .sc-pipe').evaluate((el) => ({ steps: el.querySelectorAll('i').length, cur: el.querySelectorAll('i.sc-cur').length }));
+  assert(pipe.steps === 7 && pipe.cur === 1, 'pipe has 7 steps with one current step (' + JSON.stringify(pipe) + ')');
+  assert(await stageMenuClosed(panel), 'stage menu starts closed');
+  await panel.locator('[data-sc="stage-toggle"]').click();
+  await panel.locator('.sc-stage-menu').waitFor();
+  assert((await panel.locator('.sc-stage-menu').innerText()).includes('รอมัดจำ'), 'stage menu uses the labels served by /api/config');
+  await panel.locator('[data-sc="stage-toggle"]').press('Escape');
+  await waitFor(() => stageMenuClosed(panel), 'stage menu closes on Escape');
+  assert((await shownPanels(panel)).join() === 'overview', 'lead view opens on the overview tab');
   assert(await panel.locator('[data-sc="details"]').isVisible(), 'requirement card is shown');
   log('branded panel loads a lead; stage labels and the requirement card come from the real /api/config');
 
@@ -145,6 +161,8 @@ try {
   log('staff edit of a requirement field is saved and locked against the agent');
 
   // Offer with a deposit, summary into the composer.
+  assert(await panel.locator('[data-tab-view="order"] .sc-tabdot').count() === 0, 'no dot on the order tab before there is an offer');
+  await openTab(panel, 'order');
   await panel.locator('[data-sc="order"]').scrollIntoViewIfNeeded();
   await panel.locator('[data-sc="product-search"]').fill('Kave');
   await panel.locator('[data-sc="product-results"] .sc-search-item').first().click();
@@ -172,8 +190,12 @@ try {
   assert(after.media.find((m) => m.category === 'slip').slip.matches_order === true, 'slip amount matches the deposit');
   assert(after.order.status === 'awaiting_payment', 'nothing is marked paid until staff confirm');
   await page.reload();
+  await panel.locator('[data-sc="lead-name"]').waitFor();
+  assert(await panel.locator('[data-tab-view="order"] .sc-tabdot').count() === 1, 'order tab is dotted: an open offer with a slip waiting to be confirmed');
+  await openTab(panel, 'album');
   await panel.locator('[data-sc="album-grid"]').waitFor();
   await waitFor(async () => (await panel.locator('[data-sc="album-grid"] img').count()) >= 1, 'slip shows in the album');
+  await openTab(panel, 'overview');
   await panel.locator('[data-sc="details"]').scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.join(SHOTS, 'e2e-gbl-panel.png') });
   log('slip for the deposit → album, matched, offer still awaiting staff confirmation');
