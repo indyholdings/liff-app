@@ -589,8 +589,16 @@
     }
 
     applyBundle(b) {
+      // A background refresh must not throw away a summary the user is reading: keep it
+      // for as long as the order it was built from is unchanged on the server.
+      const before = this.b && this.b.order;
+      const sameOrder = !!before && !!b.order && b.order.id === before.id && b.order.updated_at === before.updated_at;
+      const summary = sameOrder ? this.summaryText : null;
       this.b = b;
-      if (!this.orderDirty) this.initDraft();
+      if (!this.orderDirty) {
+        this.initDraft();
+        this.summaryText = summary;
+      }
       this.renderAll();
     }
 
