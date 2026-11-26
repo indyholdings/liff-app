@@ -174,3 +174,101 @@ Money is `numeric(12,2)` in the database and a JS number in JSON. Ids are number
 - A slip matches when its amount equals the order total or the deposit.
 - Customer text and images are data. Nothing in them changes what the agent does.
 - A phone number is normalised to digits with a leading 0 (`+66812345678` → `0812345678`).
+
+## Profiles and brands (v0.2)
+
+One codebase serves more than one business. Each business gets its **own deployment**
+(its own Supabase project, secrets and LINE channel), so customer data is never shared;
+the schema name, function name and secret names stay the same in every deployment.
+Two things differ per deployment:
+
+- **Profile** — what kind of business it is. Chosen by the `SIDECAR_PROFILE` secret
+  (`retail`, the default, or `real_estate`) and served to the UI by `GET /api/config`.
+- **Brand** — how the staff UI looks. Static, chosen when the UI is built
+  (`extension/brand.js`, generated from `brands/<brand>/brand.json`).
+
+### Profile (server)
+
+`Deps.env.PROFILE?: string` and `Deps.env.FORWARD_WEBHOOK_URL?: string` are added;
+`Deps.forward?(rawBody: string, signature: string): Promise<void>` relays a webhook call.
+
+| Route | Returns |
+|---|---|
+| `GET /api/config` | `{ config: ProfileConfig }` |
+
+```ts
+interface ProfileConfig {
+  profile: "retail" | "real_estate";
+  stages: { key: Stage; label: string }[];             // display order; keys are the same nine in every profile
+  detail_fields: DetailField[];                        // [] for retail
+  media_categories: { key: Media["category"]; label: string }[];
+  payment_methods: { key: "transfer" | "cod" | "installment"; label: string }[];
+  labels: {
+    product: string; products: string;                 // "สินค้า" | "ทรัพย์"
+    order: string;                                     // "ออเดอร์" | "ข้อเสนอ/การจอง"
+    order_empty: string; product_search: string; summary_button: string;
+  };
+}
+interface DetailField {
+  key: string; label: string; type: "text" | "select";
+  options?: { value: string; label: string }[]; placeholder?: string;
+}
+```
+
+`Lead` gains `details: Record<string, string>` (column `details jsonb not null default '{}'`).
+`PATCH /api/leads/:id` accepts `details: Record<string, string | null>`: keys are merged,
+`null` or `""` removes a key, unknown keys for the profile are rejected with 400. A staff
+edit of `details.<key>` adds `details.<key>` to `locked_fields`; removing the value unlocks it.
+
+`real_estate` profile:
+
+| | |
+|---|---|
+| Stage labels, in order | new ใหม่ · interested รู้ความต้องการ · quoted ส่งทรัพย์แล้ว · booked นัดดูทรัพย์ · awaiting_payment รอมัดจำ · paid วางมัดจำแล้ว · won ปิดดีล · lost หลุด · spam สแปม |
+| Detail fields | `role` (select: owner เจ้าของทรัพย์, buyer ผู้ซื้อ, tenant ผู้เช่า, co_agent Co-agent, resident ลูกบ้าน) · `intent` (select: list_sale ฝากขาย, list_rent ฝากเช่า, buy หาซื้อ, rent หาเช่า, after_sales แจ้งปัญหาหลังเช่า, service One Stop Service) · `budget` งบประมาณ · `location` ทำเล/โครงการ · `unit_type` ประเภทห้อง · `move_in` ต้องการย้ายเข้า · `property_code` รหัสทรัพย์ |
+| Media labels | slip สลิป · product รูปทรัพย์ · before_after สภาพห้อง · document เอกสาร · other อื่น ๆ |
+| Payment methods | transfer โอนเงิน only |
+| Labels | product ทรัพย์ · order ข้อเสนอ/การจอง |
+| Model | `claude-haiku-5-5` unless `SIDECAR_MODEL` is set (the retail default stays `claude-opus-5-5`) |
+
+The agent in this profile reads the same conversation and also fills `details` (empty,
+unlocked keys only; `role` and `intent` only from the listed values). Its prompt describes
+a property agency: owners listing a unit, people looking to buy or rent, residents with
+after-sales problems. It never states a price, fee, availability or refund in a draft unless
+the figure is in the catalogue; otherwise the draft says staff will confirm. The order
+summary template is a property offer: the unit lines, price, deposit (มัดจำ), balance,
+note and payment instructions.
+
+`retail` behaves exactly as before; `details` stays `{}` and `detail_fields` is `[]`.
+
+### Forwarding the webhook
+
+A LINE channel has one webhook URL. When `FORWARD_WEBHOOK_URL` is set, every webhook call
+that passes signature verification is relayed there unchanged (same raw body, same
+`x-line-signature`, `content-type: application/json`) in `defer`, after the events are stored.
+A failed relay is logged and never changes Sidecar's own answer to LINE. Sidecar never uses
+reply tokens, so the receiver can still reply with them. The reverse also works with no code:
+another webhook owner can relay to Sidecar's `/webhook`, which verifies the same signature.
+
+### Brand (UI)
+
+`brands/<brand>/brand.json`:
+
+```json
+{ "id": "globallink", "name": "Globallink Connect", "tagline": "Link to a Better Life",
+  "theme": "globallink", "extension_name": "Globallink Connect — LINE OA Sidecar",
+  "logo_mark": "assets/logo-mark-colored.png", "logo_mark_on_dark": "assets/logo-mark-white.png",
+  "logo_landscape": "assets/logo-landscape-colored.png", "logo_landscape_on_dark": "assets/logo-landscape-white.png",
+  "icons": { "16": "assets/icon16.png", "48": "assets/icon48.png", "128": "assets/icon128.png" } }
+```
+
+`window.SIDECAR_BRAND` (from `extension/brand.js`) is read by the shared UI before any
+API call, so the setup screen is branded too. The default brand is neutral "Sidecar".
+`node scripts/build-brand.mjs <brand>` writes `dist/<brand>/extension/` (manifest name and
+icons, `brand.js`, logos, bundled fonts) and `dist/<brand>/staff.html` with its assets.
+
+Globallink theme tokens (official CI): Forest `#193E24`, Coral `#DD633A`, Ivory `#F5F2E9`,
+Sage `#DEE8DC`; Thai and Latin text in Sarabun, bundled with the build. Forest is the
+structural colour (header, active states), Coral marks the one primary action per view,
+Ivory is the page background and Sage the quiet fill. The logo is used as supplied, never
+redrawn or recoloured.
