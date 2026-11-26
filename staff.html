@@ -8,6 +8,7 @@
 <title>Sidecar — ทีมงาน</title>
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="extension/ui/app.css">
+<script src="extension/brand.js"></script>
 <style>
   html, body { height: 100%; margin: 0; background: #f4f5f7; }
   body { display: flex; flex-direction: column; height: 100dvh; }
@@ -24,6 +25,14 @@
   @media (prefers-color-scheme: dark) {
     html, body { background: #131518; }
     #linkbar { background: #10321f; color: #8fe0b0; border-bottom-color: #1c4a30; }
+  }
+  /* Globallink theme: sage bar, forest button (the page background comes from app.css) */
+  [data-theme="globallink"] #linkbar { background: #dee8dc; color: #193e24; border-bottom-color: #c5d3c2; font-family: "Sarabun", system-ui, -apple-system, "Noto Sans Thai", "Thonburi", sans-serif; font-size: 14.5px; }
+  [data-theme="globallink"] #linkbar button { border-color: #193e24; background: #193e24; color: #f5f2e9; }
+  [data-theme="globallink"] #linkbar button.x { background: transparent; border-color: transparent; color: inherit; }
+  @media (prefers-color-scheme: dark) {
+    [data-theme="globallink"] #linkbar { background: #1c2e22; color: #dee8dc; border-bottom-color: #27372b; }
+    [data-theme="globallink"] #linkbar button { border-color: #2c5a3a; background: #2c5a3a; color: #f5f2e9; }
   }
 </style>
 <script>

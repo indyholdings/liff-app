@@ -34,6 +34,14 @@
     panelWidth: 384,
   };
 
+  // The brand this copy wears: brand.js runs just before this file, in the same script world.
+  const BRAND = (typeof window.SIDECAR_BRAND === 'object' && window.SIDECAR_BRAND) || {};
+  const BRAND_NAME = String(BRAND.name || 'Sidecar');
+  // Colours of the two things this script draws on the host page. The panel itself is themed by its own CSS.
+  const CHROME = {
+    globallink: { bg: '#f5f2e9', border: '#bfcbbb', accent: '#193e24' },
+  }[BRAND.theme] || { bg: '#f4f5f7', border: '#cfd4da', accent: '#06c755' };
+
   const PANEL_URL = chrome.runtime.getURL('panel.html');
   const PANEL_ORIGIN = new URL(PANEL_URL).origin;
   const OPEN_KEY = 'sidecarPanelOpen';
@@ -45,12 +53,12 @@
   host.id = 'sidecar-host';
   host.setAttribute('style', [
     'position:fixed', 'top:0', 'right:0', 'bottom:0', 'width:' + SIDECAR_DOM.panelWidth + 'px',
-    'z-index:' + Z, 'background:#f4f5f7', 'border-left:1px solid rgba(128,136,146,.4)',
+    'z-index:' + Z, 'background:' + CHROME.bg, 'border-left:1px solid rgba(128,136,146,.4)',
     'box-shadow:-4px 0 16px rgba(16,24,40,.08)', 'display:none',
   ].join(';'));
 
   const iframe = document.createElement('iframe');
-  iframe.title = 'Sidecar';
+  iframe.title = BRAND_NAME;
   iframe.setAttribute('allow', 'clipboard-write');
   iframe.setAttribute('style', 'width:100%;height:100%;border:0;display:block;background:transparent');
   host.append(iframe);
@@ -58,10 +66,18 @@
   const toggle = document.createElement('button');
   toggle.id = 'sidecar-toggle';
   toggle.type = 'button';
-  toggle.textContent = 'S';
+  if (BRAND.logo_mark) {
+    const mark = document.createElement('img');
+    mark.alt = '';
+    mark.src = chrome.runtime.getURL(String(BRAND.logo_mark));
+    mark.setAttribute('style', 'display:block;width:18px;height:18px;margin:0 auto;object-fit:contain');
+    toggle.append(mark);
+  } else {
+    toggle.textContent = 'S';
+  }
   toggle.setAttribute('style', [
     'position:fixed', 'top:84px', 'right:0', 'z-index:' + Z, 'width:26px', 'height:44px', 'padding:0',
-    'border:1px solid #cfd4da', 'border-right:0', 'border-radius:8px 0 0 8px', 'background:#fff', 'color:#06c755',
+    'border:1px solid ' + CHROME.border, 'border-right:0', 'border-radius:8px 0 0 8px', 'background:#fff', 'color:' + CHROME.accent,
     'font:700 14px/1 system-ui,sans-serif', 'cursor:pointer', 'box-shadow:-2px 2px 8px rgba(16,24,40,.12)',
   ].join(';'));
 
@@ -74,7 +90,7 @@
   function applyOpen() {
     host.style.display = open ? 'block' : 'none';
     toggle.style.right = open ? SIDECAR_DOM.panelWidth + 'px' : '0';
-    toggle.title = open ? 'ซ่อน Sidecar (Alt+S)' : 'เปิด Sidecar (Alt+S)';
+    toggle.title = (open ? 'ซ่อน ' : 'เปิด ') + BRAND_NAME + ' (Alt+S)';
     toggle.setAttribute('aria-label', toggle.title);
     toggle.setAttribute('aria-expanded', String(open));
     if (SIDECAR_DOM.layout === 'push') {

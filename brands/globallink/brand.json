@@ -1,0 +1,13 @@
+{
+  "id": "globallink",
+  "name": "Globallink Connect",
+  "tagline": "Link to a Better Life",
+  "theme": "globallink",
+  "extension_name": "Globallink Connect — LINE OA Sidecar",
+  "extension_description": "การ์ดลูกค้า ความต้องการ โน้ต อัลบั้ม และข้อเสนอ ข้างแชท LINE OA Manager",
+  "logo_mark": "assets/logo-mark-colored.png",
+  "logo_mark_on_dark": "assets/logo-mark-white.png",
+  "logo_landscape": "assets/logo-landscape-colored.png",
+  "logo_landscape_on_dark": "assets/logo-landscape-white.png",
+  "icons": { "16": "assets/icon16.png", "48": "assets/icon48.png", "128": "assets/icon128.png" }
+}

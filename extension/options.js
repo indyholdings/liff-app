@@ -7,6 +7,23 @@
     : SidecarUI.localStore; // dev: page opened outside Chrome's extension context
 
   const $ = (id) => document.getElementById(id);
+
+  // Brand: name in the copy, and the logo with its tagline above the form when the brand has one.
+  const brand = SidecarUI.brand;
+  for (const el of document.querySelectorAll('[data-brand-name]')) el.textContent = brand.name;
+  if (brand.id !== 'sidecar') $('optTitle').textContent = 'ตั้งค่า ' + brand.name;
+  const logo = SidecarUI.brandLogo('landscape', 'auto', 'sc-brand-logo');
+  if (logo) {
+    const head = $('brandHead');
+    head.append(logo);
+    if (brand.tagline) {
+      const tag = document.createElement('div');
+      tag.className = 'sc-brand-tagline';
+      tag.textContent = brand.tagline;
+      head.append(tag);
+    }
+    head.hidden = false;
+  }
   const apiUrl = $('apiUrl');
   const token = $('token');
   const result = $('result');
@@ -38,7 +55,7 @@
     const cfg = read();
     if (!valid(cfg)) return;
     await store.set({ sidecarApiUrl: cfg.baseUrl, sidecarToken: cfg.token });
-    line('ok', 'บันทึกแล้ว — แผง Sidecar ที่เปิดอยู่จะใช้ค่าใหม่ทันที');
+    line('ok', 'บันทึกแล้ว — แผง ' + brand.name + ' ที่เปิดอยู่จะใช้ค่าใหม่ทันที');
   });
 
   $('test').addEventListener('click', async () => {

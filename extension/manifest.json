@@ -9,13 +9,13 @@
   "content_scripts": [
     {
       "matches": ["https://chat.line.biz/*"],
-      "js": ["content.js"],
+      "js": ["brand.js", "content.js"],
       "run_at": "document_idle"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["panel.html", "panel.js", "panel.css", "ui/*"],
+      "resources": ["panel.html", "panel.js", "panel.css", "brand.js", "ui/*"],
       "matches": ["https://chat.line.biz/*"]
     }
   ],

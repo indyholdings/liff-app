@@ -5,34 +5,177 @@
 (function (global) {
   'use strict';
 
+  // ------------------------------------------------------------------ brand
+  // Static, chosen when the UI is built: extension/brand.js sets window.SIDECAR_BRAND before this
+  // file loads. Asset paths in it are relative to the extension root, one level above this script.
+  const SCRIPT_SRC = (typeof document !== 'undefined' && document.currentScript && document.currentScript.src) || '';
+  const BRAND = (function () {
+    const raw = global.SIDECAR_BRAND && typeof global.SIDECAR_BRAND === 'object' ? global.SIDECAR_BRAND : {};
+    let root = '';
+    try { root = SCRIPT_SRC ? new URL('../', SCRIPT_SRC).href : ''; } catch (_) { root = ''; }
+    const asset = (p) => {
+      if (!p || typeof p !== 'string') return '';
+      try { return root ? new URL(p, root).href : p; } catch (_) { return ''; }
+    };
+    const pair = (light, dark) => { const l = asset(light); return l ? { light: l, dark: asset(dark) || l } : null; };
+    return {
+      id: String(raw.id || 'sidecar'),
+      name: String(raw.name || 'Sidecar'),
+      tagline: raw.tagline ? String(raw.tagline) : '',
+      theme: String(raw.theme || 'default'),
+      mark: pair(raw.logo_mark, raw.logo_mark_on_dark),
+      landscape: pair(raw.logo_landscape, raw.logo_landscape_on_dark),
+      fontsCss: asset(raw.fonts_css),
+    };
+  })();
+
+  /** Theme attribute, bundled fonts and page title. Runs once, as soon as this file loads. */
+  function applyBrand() {
+    if (typeof document === 'undefined') return;
+    const html = document.documentElement;
+    html.dataset.theme = BRAND.theme;
+    if (BRAND.fontsCss && !document.querySelector('link[data-sc-fonts]')) {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = BRAND.fontsCss;
+      link.setAttribute('data-sc-fonts', '');
+      document.head.append(link);
+    }
+    if (BRAND.name !== 'Sidecar' && /^Sidecar\b/.test(document.title)) document.title = document.title.replace(/^Sidecar\b/, BRAND.name);
+  }
+  applyBrand();
+
+  /**
+   * The brand's logo as an element, or null when the brand has none.
+   * kind: "mark" | "landscape". on: "auto" follows the colour scheme, "dark" is for a dark surface.
+   */
+  function brandLogo(kind, on, cls) {
+    const set = kind === 'landscape' ? BRAND.landscape : BRAND.mark;
+    if (!set) return null;
+    const img = document.createElement('img');
+    img.alt = BRAND.name;
+    img.decoding = 'async';
+    if (on === 'dark' || set.dark === set.light) {
+      img.src = on === 'dark' ? set.dark : set.light;
+      img.className = cls || '';
+      return img;
+    }
+    img.src = set.light;
+    const pic = document.createElement('picture');
+    pic.className = cls || '';
+    const dark = document.createElement('source');
+    dark.srcset = set.dark;
+    dark.media = '(prefers-color-scheme: dark)';
+    pic.append(dark, img);
+    return pic;
+  }
+
+  // ------------------------------------------------------------------ profile
+  // What kind of business this deployment serves. Comes from GET /api/config after sign-in; a
+  // server without that route (or any failure) leaves the built-in retail profile in place.
+  const STAGE_KEYS = ['new', 'interested', 'quoted', 'awaiting_payment', 'paid', 'booked', 'won', 'lost', 'spam'];
+  const MEDIA_KEYS = ['slip', 'product', 'before_after', 'document', 'other'];
+  const PAY_KEYS = ['transfer', 'cod', 'installment'];
+  const RETAIL_CONFIG = {
+    profile: 'retail',
+    stages: [
+      { key: 'new', label: 'ใหม่' },
+      { key: 'interested', label: 'สนใจ' },
+      { key: 'quoted', label: 'เสนอราคาแล้ว' },
+      { key: 'awaiting_payment', label: 'รอโอน' },
+      { key: 'paid', label: 'ชำระแล้ว' },
+      { key: 'booked', label: 'จองคิวแล้ว' },
+      { key: 'won', label: 'ปิดการขาย' },
+      { key: 'lost', label: 'ยกเลิก' },
+      { key: 'spam', label: 'สแปม' },
+    ],
+    detail_fields: [],
+    media_categories: [
+      { key: 'slip', label: 'สลิป' },
+      { key: 'product', label: 'สินค้า' },
+      { key: 'before_after', label: 'ก่อน-หลัง' },
+      { key: 'document', label: 'เอกสาร' },
+      { key: 'other', label: 'อื่นๆ' },
+    ],
+    payment_methods: [
+      { key: 'transfer', label: 'โอนเงิน' },
+      { key: 'cod', label: 'เก็บเงินปลายทาง' },
+      { key: 'installment', label: 'ผ่อนชำระ' },
+    ],
+    labels: {
+      product: 'สินค้า',
+      products: 'สินค้า',
+      order: 'ออเดอร์',
+      order_empty: 'ยังไม่มีออเดอร์',
+      product_search: 'ค้นหาสินค้าเพื่อเพิ่ม…',
+      summary_button: 'ร่างข้อความสรุป',
+    },
+  };
+  let CONFIG = RETAIL_CONFIG;
+
+  /** Takes what the server sent and keeps only well-formed parts; anything else falls back to retail. */
+  function setConfig(raw) {
+    const base = RETAIL_CONFIG;
+    if (!raw || typeof raw !== 'object') { CONFIG = base; return CONFIG; }
+    const str = (v) => (typeof v === 'string' && v.trim() ? v.trim() : '');
+    const keyed = (list, allowed, fallback) => {
+      if (!Array.isArray(list)) return fallback;
+      const seen = new Set();
+      const out = [];
+      for (const it of list) {
+        const key = it && str(it.key);
+        if (!key || !allowed.includes(key) || seen.has(key)) continue;
+        seen.add(key);
+        out.push({ key, label: str(it.label) || key });
+      }
+      return out.length ? out : fallback;
+    };
+    // Every stage and category must stay reachable, so ones the server left out keep their retail label.
+    const complete = (list, fallback) => list.concat(fallback.filter((f) => !list.some((x) => x.key === f.key)));
+    const fields = [];
+    if (Array.isArray(raw.detail_fields)) {
+      for (const f of raw.detail_fields) {
+        const key = f && str(f.key);
+        if (!key || !/^[a-z0-9_]{1,40}$/i.test(key) || fields.some((x) => x.key === key)) continue;
+        const options = f.type === 'select' && Array.isArray(f.options)
+          ? f.options.filter((o) => o && str(o.value)).map((o) => ({ value: str(o.value), label: str(o.label) || str(o.value) }))
+          : null;
+        fields.push({ key, label: str(f.label) || key, type: options && options.length ? 'select' : 'text', options: options || [], placeholder: str(f.placeholder) });
+      }
+    }
+    const labels = {};
+    for (const k of Object.keys(base.labels)) labels[k] = (raw.labels && str(raw.labels[k])) || base.labels[k];
+    CONFIG = {
+      profile: str(raw.profile) || base.profile,
+      stages: complete(keyed(raw.stages, STAGE_KEYS, base.stages), base.stages),
+      detail_fields: fields,
+      media_categories: complete(keyed(raw.media_categories, MEDIA_KEYS, base.media_categories), base.media_categories),
+      payment_methods: keyed(raw.payment_methods, PAY_KEYS, base.payment_methods),
+      labels,
+    };
+    return CONFIG;
+  }
+  function stageLabel(key) { const s = CONFIG.stages.find((x) => x.key === key); return s ? s.label : key; }
+  function mediaLabel(key) { const c = CONFIG.media_categories.find((x) => x.key === key); return c ? c.label : key; }
+  /** An order moves through the same money steps as the lead, so it borrows those two stage labels. */
+  function orderStatusLabel(status) {
+    if (status === 'draft') return 'ร่าง';
+    if (status === 'cancelled') return 'ยกเลิก';
+    if (status === 'awaiting_payment' || status === 'paid') return stageLabel(status);
+    return status;
+  }
+  function detailField(key) { return CONFIG.detail_fields.find((f) => f.key === key) || null; }
+  /** The label of a select value, or the raw text for free-text fields. */
+  function detailText(lead, key) {
+    const v = lead && lead.details && lead.details[key];
+    if (v == null || v === '') return '';
+    const f = detailField(key);
+    if (f && f.type === 'select') { const o = f.options.find((x) => x.value === v); return o ? o.label : String(v); }
+    return String(v);
+  }
+  const L = () => CONFIG.labels;
+
   // ------------------------------------------------------------------ constants
-  const STAGES = [
-    { id: 'new', label: 'ใหม่' },
-    { id: 'interested', label: 'สนใจ' },
-    { id: 'quoted', label: 'เสนอราคาแล้ว' },
-    { id: 'awaiting_payment', label: 'รอโอน' },
-    { id: 'paid', label: 'ชำระแล้ว' },
-    { id: 'booked', label: 'จองคิวแล้ว' },
-    { id: 'won', label: 'ปิดการขาย' },
-    { id: 'lost', label: 'ยกเลิก' },
-    { id: 'spam', label: 'สแปม' },
-  ];
-  const STAGE_LABEL = Object.fromEntries(STAGES.map((s) => [s.id, s.label]));
-  const MEDIA_CATS = [
-    { id: 'slip', label: 'สลิป' },
-    { id: 'product', label: 'สินค้า' },
-    { id: 'before_after', label: 'ก่อน-หลัง' },
-    { id: 'document', label: 'เอกสาร' },
-    { id: 'other', label: 'อื่นๆ' },
-  ];
-  const MEDIA_LABEL = Object.fromEntries(MEDIA_CATS.map((c) => [c.id, c.label]));
-  const PAY_METHODS = [
-    { id: '', label: 'ยังไม่ระบุ' },
-    { id: 'transfer', label: 'โอนเงิน' },
-    { id: 'cod', label: 'เก็บเงินปลายทาง' },
-    { id: 'installment', label: 'ผ่อนชำระ' },
-  ];
-  const ORDER_STATUS = { draft: 'ร่าง', awaiting_payment: 'รอโอน', paid: 'ชำระแล้ว', cancelled: 'ยกเลิก' };
   const NOTE_KIND = { ai: 'AI', staff: 'ทีม', system: 'ระบบ' };
   const CARD_FIELDS = [
     { key: 'full_name', label: 'ชื่อ-นามสกุล', placeholder: 'ยังไม่มีชื่อ', wide: true },
@@ -185,7 +328,7 @@
     return img;
   }
   function stageTag(stage) {
-    return h('span', { class: 'sc-stage-tag sc-st-' + stage }, STAGE_LABEL[stage] || stage);
+    return h('span', { class: 'sc-stage-tag sc-st-' + stage }, stageLabel(stage));
   }
   function leadName(l) { return l.display_name || l.full_name || 'ลูกค้า LINE'; }
 
@@ -339,20 +482,24 @@
       this.summaryText = null;
       this.cardInputs = {};
       this.cardStates = {};
+      this.detailInputs = {};
+      this.detailStates = {};
       this.initDraft();
 
       this.secHead = h('section', { class: 'sc-card', 'data-sc': 'lead-head' });
       this.secAgent = h('section', { class: 'sc-card sc-agent', 'data-sc': 'agent' });
       this.secMsgs = h('section', { class: 'sc-card', 'data-sc': 'messages' });
       this.secCard = h('section', { class: 'sc-card', 'data-sc': 'card' });
+      this.secDetails = h('section', { class: 'sc-card', 'data-sc': 'details', hidden: true });
       this.secOrder = h('section', { class: 'sc-card', 'data-sc': 'order' });
       this.secNotes = h('section', { class: 'sc-card', 'data-sc': 'notes' });
       this.secAlbum = h('section', { class: 'sc-card', 'data-sc': 'album' });
       this.secFollow = h('section', { class: 'sc-card', 'data-sc': 'followup' });
       this.el = h('div', { class: 'sc-view', 'data-sc': 'lead', 'data-lead-id': bundle.lead.id },
-        this.secHead, this.secAgent, this.secMsgs, this.secCard, this.secOrder, this.secNotes, this.secAlbum, this.secFollow);
+        this.secHead, this.secAgent, this.secMsgs, this.secCard, this.secDetails, this.secOrder, this.secNotes, this.secAlbum, this.secFollow);
 
       this.buildCard();
+      this.buildDetails();
       this.buildNotesShell();
       this.renderAll();
     }
@@ -390,6 +537,7 @@
       this.renderAgent();
       this.renderMessages();
       this.syncCard();
+      this.syncDetails();
       if (!this.orderDirty) this.renderOrder();
       this.renderNotes();
       this.renderAlbum();
@@ -431,12 +579,12 @@
         : null;
 
       const stageChips = h('div', { class: 'sc-chips', role: 'group', 'aria-label': 'สถานะลูกค้า', 'data-sc': 'stages' },
-        STAGES.map((s) => h('button', {
+        CONFIG.stages.map((s) => h('button', {
           type: 'button',
-          class: 'sc-chip sc-st-' + s.id + (l.stage === s.id ? ' sc-on' : ''),
-          'aria-pressed': l.stage === s.id ? 'true' : 'false',
-          'data-stage': s.id,
-          onclick: () => this.setStage(s.id),
+          class: 'sc-chip sc-st-' + s.key + (l.stage === s.key ? ' sc-on' : ''),
+          'aria-pressed': l.stage === s.key ? 'true' : 'false',
+          'data-stage': s.key,
+          onclick: () => this.setStage(s.key),
         }, s.label)));
 
       const tagInput = h('input', {
@@ -497,6 +645,7 @@
       } catch (err) { this.app.toast(err.message, 'err'); }
       this.renderHead();
       this.syncCard();
+      this.syncDetails();
     }
 
     async addTag(input) {
@@ -535,19 +684,21 @@
           body.append(
             h('div', { class: 'sc-label' }, 'ร่างคำตอบ'),
             h('blockquote', { class: 'sc-quote', 'data-sc': 'suggested-reply' }, l.suggested_reply),
-            this.textActions(() => l.suggested_reply, 'reply'));
+            this.textActions(() => l.suggested_reply, 'reply', true));
         }
       }
       fill(this.secAgent, head, body);
     }
 
-    textActions(getText, key) {
+    /** Insert / copy buttons for a piece of text. `cta` marks the one main action of the view. */
+    textActions(getText, key, cta) {
       const row = h('div', { class: 'sc-row-gap' });
+      const strong = ' sc-primary' + (cta ? ' sc-cta' : '');
       if (this.app.host.insertText) {
-        row.append(h('button', { type: 'button', class: 'sc-btn sc-primary sc-small', 'data-sc': key + '-insert', onclick: () => this.app.insertOrCopy(getText()) }, icon('insert'), 'ใส่ในช่องแชท'));
+        row.append(h('button', { type: 'button', class: 'sc-btn sc-small' + strong, 'data-sc': key + '-insert', onclick: () => this.app.insertOrCopy(getText()) }, icon('insert'), 'ใส่ในช่องแชท'));
       }
       row.append(h('button', {
-        type: 'button', class: 'sc-btn sc-small' + (this.app.host.insertText ? '' : ' sc-primary'), 'data-sc': key + '-copy',
+        type: 'button', class: 'sc-btn sc-small' + (this.app.host.insertText ? '' : strong), 'data-sc': key + '-copy',
         onclick: () => this.app.copy(getText()),
       }, icon('copy'), 'คัดลอก'));
       return row;
@@ -654,6 +805,85 @@
         same.map((s, i) => [i ? ', ' : '', h('button', { type: 'button', class: 'sc-link', onclick: () => this.app.openLead(s.id) }, leadName(s))])));
     }
 
+    // ---- requirement card: the profile's detail fields (empty for retail, so the card stays hidden)
+    buildDetails() {
+      const fields = CONFIG.detail_fields;
+      this.secDetails.hidden = !fields.length;
+      if (!fields.length) return;
+      const grid = h('div', { class: 'sc-grid-card' });
+      fields.forEach((f, i) => {
+        const lockKey = 'details.' + f.key;
+        const state = h('span', { class: 'sc-state' });
+        const lock = h('button', {
+          type: 'button', class: 'sc-lockmark', hidden: true, 'data-lock': lockKey,
+          title: 'ทีมแก้ไขเอง — Agent จะไม่เขียนทับ (กดเพื่อปลดล็อก)', 'aria-label': 'ปลดล็อก ' + f.label + ' ให้ Agent กรอกได้',
+          onclick: (e) => { e.preventDefault(); this.unlock(lockKey); },
+        }, icon('lock'));
+        let input;
+        if (f.type === 'select') {
+          input = h('select', { class: 'sc-input', id: 'sc-d-' + f.key, 'data-detail': f.key, onchange: () => this.saveDetail(f.key) },
+            h('option', { value: '' }, 'ยังไม่ระบุ'), f.options.map((o) => h('option', { value: o.value }, o.label)));
+        } else {
+          input = h('input', {
+            class: 'sc-input', id: 'sc-d-' + f.key, type: 'text', placeholder: f.placeholder || 'ยังไม่ระบุ', 'data-detail': f.key, autocomplete: 'off', maxlength: '200',
+            onblur: () => this.saveDetail(f.key),
+            onkeydown: (e) => { if (e.key === 'Enter') input.blur(); if (e.key === 'Escape') { input.value = input.dataset.saved || ''; input.blur(); } },
+          });
+        }
+        this.detailInputs[f.key] = input;
+        this.detailStates[f.key] = { state, lock };
+        // An odd field count leaves the last one alone on its row: let it span the card.
+        const wide = fields.length % 2 === 1 && i === fields.length - 1;
+        grid.append(h('div', { class: 'sc-field' + (wide ? ' sc-wide' : '') },
+          h('div', { class: 'sc-label' }, h('label', { for: 'sc-d-' + f.key }, f.label), lock, state),
+          input));
+      });
+      fill(this.secDetails,
+        h('div', { class: 'sc-sec-head' }, h('h2', { class: 'sc-sec-title' }, 'ความต้องการ')),
+        h('div', { class: 'sc-sec-body' }, grid));
+    }
+
+    syncDetails() {
+      const fields = CONFIG.detail_fields;
+      if (!fields.length) return;
+      const details = this.lead.details || {};
+      const locked = this.lead.locked_fields || [];
+      for (const f of fields) {
+        const input = this.detailInputs[f.key];
+        if (!input) continue;
+        const server = details[f.key] == null ? '' : String(details[f.key]);
+        // A value the server holds that is not among the options still has to show.
+        if (f.type === 'select' && server && !f.options.some((o) => o.value === server) && !input.querySelector('option[data-extra]')) {
+          input.append(h('option', { value: server, 'data-extra': '' }, server));
+        }
+        if (document.activeElement !== input) input.value = server;
+        input.dataset.saved = server;
+        this.detailStates[f.key].lock.hidden = !locked.includes('details.' + f.key);
+      }
+    }
+
+    async saveDetail(key) {
+      const input = this.detailInputs[key];
+      const st = this.detailStates[key].state;
+      const value = input.value.trim();
+      if (value === (input.dataset.saved || '')) { if (input.tagName === 'INPUT') input.value = value; return; }
+      st.className = 'sc-state';
+      st.textContent = 'กำลังบันทึก…';
+      try {
+        await this.patchLead({ details: { [key]: value || null } });
+        st.className = 'sc-state sc-ok';
+        st.textContent = 'บันทึกแล้ว';
+        setTimeout(() => { if (st.textContent === 'บันทึกแล้ว') st.textContent = ''; }, 1800);
+        this.syncDetails();
+        this.app.notifyChanged();
+      } catch (err) {
+        st.className = 'sc-state sc-err';
+        st.textContent = 'บันทึกไม่สำเร็จ';
+        input.value = input.dataset.saved || '';
+        this.app.toast(err.message, 'err');
+      }
+    }
+
     resetField(key) {
       const input = this.cardInputs[key];
       input.value = input.dataset.saved || '';
@@ -742,7 +972,7 @@
       els.depRow = [depDt, els.deposit, remDt, els.remain];
       this.totalsEls = els;
       return h('dl', { class: 'sc-totals' },
-        h('dt', null, 'ยอดสินค้า'), els.subtotal,
+        h('dt', null, 'ยอด' + L().product), els.subtotal,
         h('dt', null, 'ส่วนลด'), els.discount,
         h('dt', null, 'ค่าจัดส่ง'), els.shipping,
         h('dt', { class: 'sc-grand' }, 'ยอดรวม'), els.total,
@@ -752,10 +982,10 @@
     renderOrder() {
       const d = this.draft;
       const statusBadge = d.status
-        ? h('span', { class: 'sc-order-status sc-os-' + d.status, 'data-sc': 'order-status' }, ORDER_STATUS[d.status] || d.status)
-        : h('span', { class: 'sc-order-status', 'data-sc': 'order-status' }, 'ยังไม่มีออเดอร์');
+        ? h('span', { class: 'sc-order-status sc-os-' + d.status, 'data-sc': 'order-status' }, orderStatusLabel(d.status))
+        : h('span', { class: 'sc-order-status', 'data-sc': 'order-status' }, L().order_empty);
       this.dirtyMark = h('span', { class: 'sc-dirty', hidden: !this.orderDirty }, '● ยังไม่บันทึก');
-      const head = h('div', { class: 'sc-sec-head' }, h('h2', { class: 'sc-sec-title' }, 'ออเดอร์'), this.dirtyMark, statusBadge);
+      const head = h('div', { class: 'sc-sec-head' }, h('h2', { class: 'sc-sec-title' }, L().order), this.dirtyMark, statusBadge);
       const body = h('div', { class: 'sc-sec-body' });
       this.summaryBox = h('div', { 'data-sc': 'summary-box', style: 'display:flex;flex-direction:column;gap:8px' });
       this.lineEls = [];
@@ -767,8 +997,8 @@
             h('b', null, money(num(it.qty) * num(it.unit_price)))))),
           this.totalsBlock(),
           h('div', { class: 'sc-row-gap' },
-            h('button', { type: 'button', class: 'sc-btn sc-small', 'data-sc': 'summary', onclick: () => this.showSummary() }, 'ร่างข้อความสรุป'),
-            h('button', { type: 'button', class: 'sc-btn sc-small', 'data-sc': 'order-new', onclick: () => { this.draft = this.blankDraft(); this.orderReadonly = false; this.renderOrder(); } }, icon('plus'), 'สร้างออเดอร์ใหม่')),
+            h('button', { type: 'button', class: 'sc-btn sc-small', 'data-sc': 'summary', onclick: () => this.showSummary() }, L().summary_button),
+            h('button', { type: 'button', class: 'sc-btn sc-small', 'data-sc': 'order-new', onclick: () => { this.draft = this.blankDraft(); this.orderReadonly = false; this.renderOrder(); } }, icon('plus'), 'สร้าง' + L().order + 'ใหม่')),
           this.summaryBox);
         fill(this.secOrder, head, body);
         this.updateTotals();
@@ -779,7 +1009,7 @@
       // product search
       const results = h('div', { class: 'sc-search-results', hidden: true, 'data-sc': 'product-results' });
       const searchInput = h('input', {
-        class: 'sc-input', type: 'search', placeholder: 'ค้นหาสินค้าเพื่อเพิ่ม…', 'aria-label': 'ค้นหาสินค้า', autocomplete: 'off', 'data-sc': 'product-search',
+        class: 'sc-input', type: 'search', placeholder: L().product_search, 'aria-label': 'ค้นหา' + L().product, autocomplete: 'off', 'data-sc': 'product-search',
       });
       let searchSeq = 0;
       const runSearch = debounce(async () => {
@@ -794,7 +1024,7 @@
               type: 'button', class: 'sc-search-item', 'data-product-id': p.id,
               onclick: () => { this.addProduct(p); searchInput.value = ''; results.hidden = true; },
             }, h('span', null, p.name), h('span', null, money(p.price)))))
-            : h('div', { class: 'sc-search-empty' }, q ? 'ไม่พบ "' + q + '" — ใช้ "เพิ่มรายการเอง" ได้' : 'ยังไม่มีสินค้าในระบบ เพิ่มได้ที่ตั้งค่า'));
+            : h('div', { class: 'sc-search-empty' }, q ? 'ไม่พบ "' + q + '" — ใช้ "เพิ่มรายการเอง" ได้' : 'ยังไม่มี' + L().products + 'ในระบบ เพิ่มได้ที่ตั้งค่า'));
           results.hidden = false;
         } catch (err) {
           if (seq !== searchSeq) return;
@@ -823,23 +1053,27 @@
             h('input', { class: 'sc-input sc-num', type: 'number', min: '0', step: 'any', inputmode: 'decimal', value: it.unit_price, 'aria-label': 'ราคาต่อหน่วย', 'data-sc': 'item-price', oninput: bind('unit_price', true) }),
             line)));
       });
-      if (!d.items.length) items.append(h('div', { class: 'sc-muted sc-small' }, 'ยังไม่มีรายการ ค้นหาสินค้าด้านบน หรือเพิ่มรายการเอง'));
+      if (!d.items.length) items.append(h('div', { class: 'sc-muted sc-small' }, 'ยังไม่มีรายการ ค้นหา' + L().product + 'ด้านบน หรือเพิ่มรายการเอง'));
 
       const field = (label, control) => h('label', { class: 'sc-field' }, h('span', { class: 'sc-label' }, label), control);
       const numInput = (key, sc) => h('input', {
         class: 'sc-input sc-num', type: 'number', min: '0', step: 'any', inputmode: 'decimal', value: d[key] === '' ? '' : d[key], placeholder: '0', 'data-sc': sc,
         oninput: (e) => { d[key] = e.target.value === '' ? (key === 'deposit_amount' ? '' : 0) : num(e.target.value); this.markDirty(); },
       });
-      const paySelect = h('select', { class: 'sc-input', 'data-sc': 'order-payment', onchange: (e) => { d.payment_method = e.target.value; this.markDirty(); } },
-        PAY_METHODS.map((p) => h('option', { value: p.id }, p.label)));
-      paySelect.value = d.payment_method || '';
+      // One way to pay means there is nothing to choose: the selector is left out and that way is saved.
+      const methods = CONFIG.payment_methods;
+      const paySelect = methods.length > 1
+        ? h('select', { class: 'sc-input', 'data-sc': 'order-payment', onchange: (e) => { d.payment_method = e.target.value; this.markDirty(); } },
+          h('option', { value: '' }, 'ยังไม่ระบุ'), methods.map((p) => h('option', { value: p.key }, p.label)))
+        : null;
+      if (paySelect) paySelect.value = d.payment_method || '';
 
-      this.saveBtn = h('button', { type: 'button', class: 'sc-btn sc-primary', 'data-sc': 'order-save', onclick: () => this.saveOrder() }, 'บันทึกออเดอร์');
+      this.saveBtn = h('button', { type: 'button', class: 'sc-btn sc-primary', 'data-sc': 'order-save', onclick: () => this.saveOrder() }, 'บันทึก' + L().order);
       const statusRow = h('div', { class: 'sc-row-gap', 'data-sc': 'order-status-actions' });
       if (d.status !== 'awaiting_payment') {
-        statusRow.append(h('button', { type: 'button', class: 'sc-btn sc-small', 'data-sc': 'order-await', onclick: () => this.setOrderStatus('awaiting_payment') }, 'ตั้งเป็นรอโอน'));
+        statusRow.append(h('button', { type: 'button', class: 'sc-btn sc-small', 'data-sc': 'order-await', onclick: () => this.setOrderStatus('awaiting_payment') }, 'ตั้งเป็น' + stageLabel('awaiting_payment')));
       }
-      statusRow.append(h('button', { type: 'button', class: 'sc-btn sc-small', 'data-sc': 'order-paid', onclick: () => this.setOrderStatus('paid') }, 'ยืนยันชำระแล้ว'));
+      statusRow.append(h('button', { type: 'button', class: 'sc-btn sc-small', 'data-sc': 'order-paid', onclick: () => this.setOrderStatus('paid') }, 'ยืนยัน' + stageLabel('paid')));
       if (d.id) statusRow.append(h('button', { type: 'button', class: 'sc-btn sc-small sc-danger', 'data-sc': 'order-cancel', onclick: () => this.setOrderStatus('cancelled') }, 'ยกเลิก'));
 
       body.append(
@@ -847,10 +1081,12 @@
         items,
         h('div', null, h('button', { type: 'button', class: 'sc-btn sc-small sc-ghost', 'data-sc': 'item-add', onclick: () => { d.items.push({ product_id: null, name: '', qty: 1, unit_price: 0 }); this.markDirty(); this.renderOrder(); const ins = this.secOrder.querySelectorAll('.sc-item input[type=text]'); if (ins.length) ins[ins.length - 1].focus(); } }, icon('plus'), 'เพิ่มรายการเอง')),
         h('div', { class: 'sc-grid2' }, field('ส่วนลด (บาท)', numInput('discount', 'order-discount')), field('ค่าจัดส่ง (บาท)', numInput('shipping_fee', 'order-shipping'))),
-        h('div', { class: 'sc-grid2' }, field('วิธีชำระ', paySelect), field('มัดจำ (บาท)', numInput('deposit_amount', 'order-deposit'))),
-        field('หมายเหตุออเดอร์', h('input', { class: 'sc-input', type: 'text', value: d.note, placeholder: 'เช่น สี / ความจุ / นัดรับ', oninput: (e) => { d.note = e.target.value; this.markDirty(); } })),
+        paySelect
+          ? h('div', { class: 'sc-grid2' }, field('วิธีชำระ', paySelect), field('มัดจำ (บาท)', numInput('deposit_amount', 'order-deposit')))
+          : field('มัดจำ (บาท)', numInput('deposit_amount', 'order-deposit')),
+        field('หมายเหตุ' + L().order, h('input', { class: 'sc-input', type: 'text', value: d.note, placeholder: CONFIG.profile === 'retail' ? 'เช่น สี / ความจุ / นัดรับ' : 'เช่น เงื่อนไข / วันนัด', oninput: (e) => { d.note = e.target.value; this.markDirty(); } })),
         this.totalsBlock(),
-        h('div', { class: 'sc-row-gap' }, this.saveBtn, h('button', { type: 'button', class: 'sc-btn', 'data-sc': 'summary', onclick: () => this.showSummary() }, 'ร่างข้อความสรุป')),
+        h('div', { class: 'sc-row-gap' }, this.saveBtn, h('button', { type: 'button', class: 'sc-btn', 'data-sc': 'summary', onclick: () => this.showSummary() }, L().summary_button)),
         statusRow,
         this.summaryBox);
       fill(this.secOrder, head, body);
@@ -875,7 +1111,7 @@
         items,
         discount: num(d.discount),
         shipping_fee: num(d.shipping_fee),
-        payment_method: d.payment_method || null,
+        payment_method: CONFIG.payment_methods.length === 1 ? CONFIG.payment_methods[0].key : (d.payment_method || null),
         deposit_amount: d.deposit_amount === '' || d.deposit_amount == null ? null : num(d.deposit_amount),
         note: String(d.note || '').trim() || null,
       };
@@ -884,7 +1120,7 @@
     /** Saves the draft. Returns true when the server holds exactly what is on screen. */
     async saveOrder(silent) {
       const body = this.orderBody();
-      if (!body.items.length) { this.app.toast('เพิ่มรายการสินค้าอย่างน้อย 1 รายการก่อนบันทึก', 'err'); return false; }
+      if (!body.items.length) { this.app.toast('เพิ่มรายการ' + L().product + 'อย่างน้อย 1 รายการก่อนบันทึก', 'err'); return false; }
       if (body.items.some((it) => it.qty <= 0)) { this.app.toast('จำนวนต้องมากกว่า 0', 'err'); return false; }
       if (this.saveBtn) { this.saveBtn.disabled = true; this.saveBtn.textContent = 'กำลังบันทึก…'; }
       this.busy = true;
@@ -893,12 +1129,12 @@
         this.b.order = r.order;
         this.initDraft();
         this.renderOrder();
-        if (!silent) this.app.toast('บันทึกออเดอร์แล้ว ยอดรวม ' + money(r.order.total), 'ok');
+        if (!silent) this.app.toast('บันทึก' + L().order + 'แล้ว ยอดรวม ' + money(r.order.total), 'ok');
         this.reload(true); // slip match and draft stage can change with the order
         return true;
       } catch (err) {
-        this.app.toast('บันทึกออเดอร์ไม่สำเร็จ: ' + err.message, 'err');
-        if (this.saveBtn) { this.saveBtn.disabled = false; this.saveBtn.textContent = 'บันทึกออเดอร์'; }
+        this.app.toast('บันทึก' + L().order + 'ไม่สำเร็จ: ' + err.message, 'err');
+        if (this.saveBtn) { this.saveBtn.disabled = false; this.saveBtn.textContent = 'บันทึก' + L().order; }
         return false;
       } finally {
         this.busy = false;
@@ -917,13 +1153,13 @@
       if (status === 'paid') {
         const ok = await this.app.confirm({
           title: 'ยืนยันว่าได้รับเงินแล้ว?',
-          body: 'ยอดออเดอร์ ' + money(o.total) + (o.deposit_amount ? ' (มัดจำ ' + money(o.deposit_amount) + ')' : '') + '\nตรวจยอดเข้าบัญชีจริงก่อนกดยืนยัน — สลิปที่ Agent อ่านได้ไม่ใช่หลักฐานว่าเงินเข้า',
-          confirmLabel: 'ยืนยันชำระแล้ว',
+          body: 'ยอด' + L().order + ' ' + money(o.total) + (o.deposit_amount ? ' (มัดจำ ' + money(o.deposit_amount) + ')' : '') + '\nตรวจยอดเข้าบัญชีจริงก่อนกดยืนยัน — สลิปที่ Agent อ่านได้ไม่ใช่หลักฐานว่าเงินเข้า',
+          confirmLabel: 'ยืนยัน' + stageLabel('paid'),
         });
         if (!ok) return;
       }
       if (status === 'cancelled') {
-        const ok = await this.app.confirm({ title: 'ยกเลิกออเดอร์นี้?', body: 'ออเดอร์ ' + money(o.total) + ' จะถูกปิดเป็นยกเลิก', confirmLabel: 'ยกเลิกออเดอร์', danger: true });
+        const ok = await this.app.confirm({ title: 'ยกเลิก' + L().order + 'นี้?', body: L().order + ' ' + money(o.total) + ' จะถูกปิดเป็นยกเลิก', confirmLabel: 'ยกเลิก' + L().order, danger: true });
         if (!ok) return;
       }
       try {
@@ -933,11 +1169,11 @@
         this.initDraft();
         this.renderOrder();
         this.renderHead();
-        this.app.toast('ออเดอร์: ' + (ORDER_STATUS[status] || status), 'ok');
+        this.app.toast(L().order + ': ' + orderStatusLabel(status), 'ok');
         this.app.notifyChanged();
         this.reload(true);
       } catch (err) {
-        this.app.toast('เปลี่ยนสถานะออเดอร์ไม่สำเร็จ: ' + err.message, 'err');
+        this.app.toast('เปลี่ยนสถานะ' + L().order + 'ไม่สำเร็จ: ' + err.message, 'err');
       }
     }
 
@@ -958,7 +1194,7 @@
       if (!this.summaryBox) return;
       if (this.summaryText == null) { this.summaryBox.replaceChildren(); return; }
       fill(this.summaryBox, 
-        h('div', { class: 'sc-label' }, 'ข้อความสรุป (สร้างจากออเดอร์ที่บันทึก ยอดตรงเสมอ)'),
+        h('div', { class: 'sc-label' }, 'ข้อความสรุป (สร้างจาก' + L().order + 'ที่บันทึก ยอดตรงเสมอ)'),
         h('blockquote', { class: 'sc-quote sc-plain', 'data-sc': 'summary-text' }, this.summaryText),
         this.textActions(() => this.summaryText, 'summary'));
     }
@@ -1048,15 +1284,15 @@
       }, label, h('span', { class: 'sc-count' }, n));
       const filters = h('div', { class: 'sc-chips', 'data-sc': 'album-filters' },
         chip('all', 'ทั้งหมด', media.length),
-        MEDIA_CATS.filter((c) => counts[c.id]).map((c) => chip(c.id, c.label, counts[c.id])));
+        CONFIG.media_categories.filter((c) => counts[c.key]).map((c) => chip(c.key, c.label, counts[c.key])));
       const list = this.filteredMedia();
       const grid = h('div', { class: 'sc-grid', 'data-sc': 'album-grid' }, list.map((m, i) => {
-        const btn = h('button', { type: 'button', class: 'sc-thumb', 'data-media-id': m.id, 'aria-label': 'เปิดรูป ' + (MEDIA_LABEL[m.category] || ''), onclick: () => this.openLightbox(i) });
+        const btn = h('button', { type: 'button', class: 'sc-thumb', 'data-media-id': m.id, 'aria-label': 'เปิดรูป ' + mediaLabel(m.category), onclick: () => this.openLightbox(i) });
         const src = safeUrl(m.url);
-        if (src) { const img = h('img', { alt: m.caption || MEDIA_LABEL[m.category] || '', loading: 'lazy' }); img.src = src; btn.append(img); }
-        btn.append(h('span', { class: 'sc-thumb-tag' }, m.category === 'slip' && m.slip && m.slip.amount != null ? money(m.slip.amount) : MEDIA_LABEL[m.category] || m.category));
+        if (src) { const img = h('img', { alt: m.caption || mediaLabel(m.category), loading: 'lazy' }); img.src = src; btn.append(img); }
+        btn.append(h('span', { class: 'sc-thumb-tag' }, m.category === 'slip' && m.slip && m.slip.amount != null ? money(m.slip.amount) : mediaLabel(m.category)));
         if (m.category === 'slip' && m.slip && m.slip.matches_order != null) {
-          btn.append(h('span', { class: 'sc-thumb-flag ' + (m.slip.matches_order ? 'sc-ok' : 'sc-bad'), title: m.slip.matches_order ? 'ยอดตรงกับออเดอร์' : 'ยอดไม่ตรงกับออเดอร์' }, m.slip.matches_order ? '✓' : '!'));
+          btn.append(h('span', { class: 'sc-thumb-flag ' + (m.slip.matches_order ? 'sc-ok' : 'sc-bad'), title: m.slip.matches_order ? 'ยอดตรงกับ' + L().order : 'ยอดไม่ตรงกับ' + L().order }, m.slip.matches_order ? '✓' : '!'));
         }
         return btn;
       }));
@@ -1094,12 +1330,12 @@
         const m = list[idx];
         count.textContent = (idx + 1) + ' / ' + list.length + ' · ' + fmtDateTime(m.created_at);
         const src = safeUrl(m.url);
-        const img = h('img', { alt: m.caption || MEDIA_LABEL[m.category] || 'รูปจากลูกค้า' });
+        const img = h('img', { alt: m.caption || mediaLabel(m.category) || 'รูปจากลูกค้า' });
         if (src) img.src = src;
         fill(stage, img);
 
         const catSelect = h('select', { class: 'sc-input', 'data-sc': 'media-category', 'aria-label': 'หมวดรูป', onchange: (e) => this.patchMedia(m, { category: e.target.value }) },
-          MEDIA_CATS.map((c) => h('option', { value: c.id }, c.label)));
+          CONFIG.media_categories.map((c) => h('option', { value: c.key }, c.label)));
         catSelect.value = m.category;
         const caption = h('input', {
           class: 'sc-input', type: 'text', value: m.caption || '', placeholder: 'คำอธิบายรูป', 'aria-label': 'คำอธิบายรูป',
@@ -1112,17 +1348,17 @@
         if (m.category === 'slip') {
           const s = m.slip || {};
           const match = s.matches_order === true
-            ? h('dd', { class: 'sc-slip-match sc-ok', 'data-sc': 'slip-match' }, '✓ ยอดตรงกับออเดอร์')
+            ? h('dd', { class: 'sc-slip-match sc-ok', 'data-sc': 'slip-match' }, '✓ ยอดตรงกับ' + L().order)
             : s.matches_order === false
-              ? h('dd', { class: 'sc-slip-match sc-bad', 'data-sc': 'slip-match' }, '⚠ ยอดไม่ตรงกับออเดอร์')
-              : h('dd', { class: 'sc-slip-match sc-none', 'data-sc': 'slip-match' }, 'ยังไม่มีออเดอร์ให้เทียบ');
+              ? h('dd', { class: 'sc-slip-match sc-bad', 'data-sc': 'slip-match' }, '⚠ ยอดไม่ตรงกับ' + L().order)
+              : h('dd', { class: 'sc-slip-match sc-none', 'data-sc': 'slip-match' }, L().order_empty + ' ให้เทียบ');
           parts.push(
             h('dl', { class: 'sc-slip', 'data-sc': 'slip-details' },
               h('dt', null, 'ยอดในสลิป'), h('dd', null, s.amount != null ? money(s.amount) : 'อ่านไม่ได้'),
               h('dt', null, 'ธนาคาร'), h('dd', null, s.bank || '—'),
               h('dt', null, 'เวลาโอน'), h('dd', null, s.paid_at ? fmtDateTime(s.paid_at) : '—'),
               h('dt', null, 'เลขอ้างอิง'), h('dd', null, s.ref || '—'),
-              h('dt', null, 'เทียบออเดอร์'), match),
+              h('dt', null, 'เทียบ' + L().order), match),
             h('div', { class: 'sc-slip-warn' }, 'อ่านสลิปได้ ไม่ได้ยืนยันว่าเงินเข้า — ตรวจยอดในบัญชีก่อนยืนยันชำระ'));
         }
         fill(info, ...parts);
@@ -1216,7 +1452,7 @@
     refresh() { return this.load(); }
 
     renderIdle() {
-      fill(this.el, h('div', { class: 'sc-view' }, emptyState('เลือกแชทลูกค้า', 'เปิดแชทใน LINE OA ทางซ้าย แล้ว Sidecar จะแสดงการ์ดลูกค้า โน้ต อัลบั้ม และออเดอร์ของแชทนั้น')));
+      fill(this.el, h('div', { class: 'sc-view' }, emptyState('เลือกแชทลูกค้า', 'เปิดแชทใน LINE OA ทางซ้าย แล้ว ' + BRAND.name + ' จะแสดงการ์ดลูกค้า โน้ต อัลบั้ม และ' + L().order + 'ของแชทนั้น')));
     }
 
     setChat(chat) {
@@ -1282,7 +1518,7 @@
         h('section', { class: 'sc-card' },
           h('div', { class: 'sc-sec-body' },
             h('b', null, 'ยังไม่มีการ์ดของแชทนี้' + (chat.name ? ' (' + chat.name + ')' : '')),
-            h('div', { class: 'sc-muted' }, 'ลูกค้าคนนี้ยังไม่ได้ส่งข้อความเข้ามาตั้งแต่เชื่อม Sidecar กับ LINE OA — เมื่อลูกค้าทักมาครั้งถัดไป ระบบจะสร้างการ์ดให้อัตโนมัติ'),
+            h('div', { class: 'sc-muted' }, 'ลูกค้าคนนี้ยังไม่ได้ส่งข้อความเข้ามาตั้งแต่เชื่อม ' + BRAND.name + ' กับ LINE OA — เมื่อลูกค้าทักมาครั้งถัดไป ระบบจะสร้างการ์ดให้อัตโนมัติ'),
             h('div', { class: 'sc-muted' }, 'ถ้าลูกค้าเคยทักมาแล้วแต่การ์ดไม่ขึ้น ให้ผูกแชทนี้กับการ์ดที่มีอยู่:'),
             search)),
         h('section', { class: 'sc-card', style: 'overflow:hidden' }, list),
@@ -1387,7 +1623,13 @@
       fill(this.tabsEl, 
         tab('all', 'ทั้งหมด', this.loadedOnce ? total : null),
         tab('due', 'ต้องตาม', this.loadedOnce ? this.dueCount : null, 'sc-due'),
-        STAGES.map((s) => tab(s.id, s.label, this.loadedOnce ? (this.counts[s.id] || 0) : null, 'sc-st-' + s.id)));
+        CONFIG.stages.map((s) => tab(s.key, s.label, this.loadedOnce ? (this.counts[s.key] || 0) : null, 'sc-st-' + s.key)));
+    }
+
+    /** What the customer is after, when the profile records it: "หาเช่า · Kave Town Colony". */
+    rowMeta(l) {
+      const bits = [detailText(l, 'intent'), detailText(l, 'location')].filter(Boolean);
+      return bits.length ? h('div', { class: 'sc-row-meta', 'data-sc': 'row-meta' }, bits.join(' · ')) : null;
     }
 
     query(offset) {
@@ -1438,7 +1680,7 @@
         const text = this.q ? 'ไม่พบลูกค้าที่ตรงกับ "' + this.q + '"'
           : this.tab === 'due' ? 'ไม่มีลูกค้าที่ถึงเวลาต้องตาม'
             : this.tab === 'all' ? 'ยังไม่มีลูกค้า — การ์ดจะถูกสร้างเมื่อมีคนทัก LINE OA เข้ามา'
-              : 'ไม่มีลูกค้าในสถานะ "' + (STAGE_LABEL[this.tab] || this.tab) + '"';
+              : 'ไม่มีลูกค้าในสถานะ "' + stageLabel(this.tab) + '"';
         fill(this.listEl, emptyState('ว่าง', text));
         return;
       }
@@ -1448,6 +1690,7 @@
           h('div', { class: 'sc-row-top' },
             h('span', { class: 'sc-row-name' }, leadName(l)),
             h('span', { class: 'sc-row-time' }, relTime(l.last_message_at))),
+          this.rowMeta(l),
           h('div', { class: 'sc-row-bottom' },
             h('span', { class: 'sc-row-preview' }, l.last_message_preview || l.ai_summary || l.phone || '—'),
             isPast(l.follow_up_at) ? h('span', { class: 'sc-due-dot', title: 'ถึงเวลาตาม' }, icon('clock'), 'ตาม') : null,
@@ -1466,9 +1709,11 @@
       this.urlInput = h('input', { class: 'sc-input', type: 'url', value: cfg.baseUrl, placeholder: 'https://xxxx.supabase.co/functions/v1/sidecar', autocomplete: 'off', spellcheck: 'false', 'data-sc': 'cfg-url' });
       this.tokenInput = h('input', { class: 'sc-input', type: 'password', value: cfg.token, placeholder: 'staff token', autocomplete: 'off', spellcheck: 'false', 'data-sc': 'cfg-token' });
       this.msg = h('div', { class: 'sc-notice sc-warn', hidden: !message, 'data-sc': 'cfg-msg' }, message || '');
-      this.btn = h('button', { type: 'submit', class: 'sc-btn sc-primary sc-block', 'data-sc': 'cfg-save' }, 'บันทึกและเชื่อมต่อ');
+      this.btn = h('button', { type: 'submit', class: 'sc-btn sc-primary sc-cta sc-block', 'data-sc': 'cfg-save' }, 'บันทึกและเชื่อมต่อ');
+      const logo = brandLogo('landscape', 'auto', 'sc-brand-logo');
       const form = h('form', { class: 'sc-sec-body', onsubmit: (e) => { e.preventDefault(); this.save(); } },
-        h('div', null, h('b', { style: 'font-size:15px' }, 'เชื่อมต่อ Sidecar'), h('div', { class: 'sc-muted' }, 'ใส่ token ประจำตัวพนักงานที่แอดมินออกให้ (ใส่ครั้งเดียว)')),
+        logo ? h('div', { class: 'sc-brand-head', 'data-sc': 'brand-head' }, logo, BRAND.tagline ? h('div', { class: 'sc-brand-tagline' }, BRAND.tagline) : null) : null,
+        h('div', null, h('b', { style: 'font-size:15px' }, 'เชื่อมต่อ ' + BRAND.name), h('div', { class: 'sc-muted' }, 'ใส่ token ประจำตัวพนักงานที่แอดมินออกให้ (ใส่ครั้งเดียว)')),
         this.msg,
         editableUrl ? h('label', { class: 'sc-field' }, h('span', { class: 'sc-label' }, 'API URL'), this.urlInput) : null,
         h('label', { class: 'sc-field' }, h('span', { class: 'sc-label' }, 'Staff token'), this.tokenInput),
@@ -1488,6 +1733,7 @@
         const r = await this.app.api.get('/api/me', { silentAuth: true });
         if (this.app.host.saveConfig) await this.app.host.saveConfig({ apiUrl: cfg.baseUrl, token: cfg.token });
         this.app.me = r.staff;
+        await this.app.loadConfig();
         this.app.afterBoot();
       } catch (err) {
         this.show(err.message);
@@ -1534,7 +1780,7 @@
       const pay = h('textarea', { class: 'sc-input', rows: '4', value: settings.payment_instructions || '', readOnly: !isAdmin, placeholder: 'เช่น โอนเข้าบัญชี กสิกรไทย 123-4-56789-0 ชื่อบัญชี …\nโอนแล้วส่งสลิปในแชทได้เลยค่ะ', 'data-sc': 'set-pay' });
       const shop = section('ร้าน', null,
         h('label', { class: 'sc-field' }, h('span', { class: 'sc-label' }, 'ชื่อร้าน'), shopName),
-        h('label', { class: 'sc-field' }, h('span', { class: 'sc-label' }, 'วิธีชำระเงิน (ต่อท้ายข้อความสรุปออเดอร์)'), pay),
+        h('label', { class: 'sc-field' }, h('span', { class: 'sc-label' }, 'วิธีชำระเงิน (ต่อท้ายข้อความสรุป' + L().order + ')'), pay),
         isAdmin
           ? h('div', null, h('button', { type: 'button', class: 'sc-btn sc-primary sc-small', 'data-sc': 'set-save', onclick: async (e) => {
             const btn = e.currentTarget;
@@ -1558,13 +1804,13 @@
             } catch (err) { app.toast(err.message, 'err'); drawProducts(); }
           };
           return h('div', { class: 'sc-prod-row' + (p.active === false ? ' sc-off' : '') },
-            h('input', { class: 'sc-input', type: 'text', value: p.name, 'aria-label': 'ชื่อสินค้า', onblur: (e) => { const v = e.target.value.trim(); if (v && v !== p.name) save({ name: v }); } }),
+            h('input', { class: 'sc-input', type: 'text', value: p.name, 'aria-label': 'ชื่อ' + L().product, onblur: (e) => { const v = e.target.value.trim(); if (v && v !== p.name) save({ name: v }); } }),
             h('input', { class: 'sc-input sc-num', type: 'number', min: '0', step: 'any', value: p.price, 'aria-label': 'ราคา', onblur: (e) => { const v = num(e.target.value); if (v !== num(p.price)) save({ price: v }); } }),
             h('button', { type: 'button', class: 'sc-btn sc-small' + (p.active === false ? '' : ' sc-ghost'), onclick: () => save({ active: p.active === false }) }, p.active === false ? 'เปิดขาย' : 'ปิด'));
-        })) : h('div', { class: 'sc-muted sc-small' }, 'ยังไม่มีสินค้า เพิ่มรายการแรกด้านล่าง'));
+        })) : h('div', { class: 'sc-muted sc-small' }, 'ยังไม่มี' + L().products + ' เพิ่มรายการแรกด้านล่าง'));
       };
       drawProducts();
-      const newName = h('input', { class: 'sc-input', type: 'text', placeholder: 'ชื่อสินค้าใหม่', 'aria-label': 'ชื่อสินค้าใหม่', 'data-sc': 'prod-name' });
+      const newName = h('input', { class: 'sc-input', type: 'text', placeholder: 'ชื่อ' + L().product + 'ใหม่', 'aria-label': 'ชื่อ' + L().product + 'ใหม่', 'data-sc': 'prod-name' });
       const newPrice = h('input', { class: 'sc-input sc-num', type: 'number', min: '0', step: 'any', placeholder: 'ราคา', 'aria-label': 'ราคา', 'data-sc': 'prod-price' });
       const addProduct = async () => {
         const name = newName.value.trim();
@@ -1575,10 +1821,10 @@
           newName.value = '';
           newPrice.value = '';
           drawProducts();
-          app.toast('เพิ่มสินค้าแล้ว', 'ok');
+          app.toast('เพิ่ม' + L().product + 'แล้ว', 'ok');
         } catch (err) { app.toast(err.message, 'err'); }
       };
-      const catalog = section('สินค้า / บริการ', null,
+      const catalog = section(CONFIG.profile === 'retail' ? 'สินค้า / บริการ' : L().products, null,
         h('form', { class: 'sc-prod-row', onsubmit: (e) => { e.preventDefault(); addProduct(); } },
           newName, newPrice, h('button', { type: 'submit', class: 'sc-btn sc-small sc-primary', 'data-sc': 'prod-add' }, icon('plus'), 'เพิ่ม')),
         list);
@@ -1621,6 +1867,10 @@
       this.toasts = h('div', { class: 'sc-toasts', 'aria-live': 'polite' });
       this.root.append(this.topbar, this.main, this.toasts);
       this.api.onUnauthorized = (err) => this.showConfig(err && err.message);
+      // A theme can name the colour of the browser chrome around the page (mobile address bar).
+      const chrome = getComputedStyle(this.root).getPropertyValue('--chrome-color').trim();
+      const meta = chrome && document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.setAttribute('content', chrome);
       this.renderTopbar();
       if (!this.api.isConfigured()) this.showConfig();
       else this.boot();
@@ -1631,11 +1881,22 @@
       try {
         const r = await this.api.get('/api/me');
         this.me = r.staff;
+        await this.loadConfig();
         this.afterBoot();
       } catch (err) {
         if (err.status === 401) return; // config screen already shown by the hook
         fill(this.main, h('div', { class: 'sc-view' }, errorState(err, () => this.boot()),
           h('div', { style: 'text-align:center' }, h('button', { type: 'button', class: 'sc-btn sc-small sc-ghost', onclick: () => this.showConfig() }, 'ตั้งค่าการเชื่อมต่อ'))));
+      }
+    }
+
+    /** The deployment's profile. A server without the route keeps the built-in retail profile. */
+    async loadConfig() {
+      try {
+        const r = await this.api.get('/api/config', { silentAuth: true });
+        setConfig(r.config);
+      } catch (_) {
+        setConfig(null);
       }
     }
 
@@ -1717,7 +1978,12 @@
 
     // ---- top bar
     renderTopbar() {
-      const brand = h('div', { class: 'sc-brand' }, h('b', null, 'Sidecar'), h('span', null, this.me ? this.me.name : ''));
+      // A theme whose top bar is dark asks for the light logo whatever the colour scheme.
+      const onDark = getComputedStyle(this.root).getPropertyValue('--topbar-logo').trim() === 'dark';
+      const mark = brandLogo('mark', onDark ? 'dark' : 'auto', 'sc-brand-mark');
+      const brand = h('div', { class: 'sc-brand' + (mark ? ' sc-has-mark' : ''), 'data-sc': 'brand' },
+        mark,
+        h('b', null, BRAND.name), h('span', null, this.me ? this.me.name : ''));
       const kids = [brand];
       if (this.me && !this.configOpen) {
         if (this.mode === 'panel') {
@@ -1818,5 +2084,9 @@
     };
   }
 
-  global.SidecarUI = { mount, createApi, ApiError, localStore, copyText, calcTotals, STAGES };
+  global.SidecarUI = {
+    mount, createApi, ApiError, localStore, copyText, calcTotals,
+    brand: BRAND, brandLogo,
+    STAGES: RETAIL_CONFIG.stages.map((s) => ({ id: s.key, label: s.label })),
+  };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -12,6 +12,14 @@
   --accent-hover: #05b34c;
   --accent-ink: #ffffff;
   --accent-soft: #e7f9ee;
+  /* Solid buttons. A theme can give the section buttons (primary) and the one main action of a
+     view (cta) their own colours; by default all three follow the accent. */
+  --primary: var(--accent);
+  --primary-hover: var(--accent-hover);
+  --primary-ink: var(--accent-ink);
+  --cta: var(--primary);
+  --cta-hover: var(--primary-hover);
+  --cta-ink: var(--primary-ink);
   --danger: #cf2f24;
   --danger-soft: #fdecea;
   --warn: #a45a06;
@@ -84,6 +92,12 @@
 .sc-brand { display: flex; align-items: baseline; gap: 8px; min-width: 0; flex: 1; }
 .sc-brand b { font-size: 14px; letter-spacing: 0.2px; }
 .sc-brand span { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sc-brand.sc-has-mark { align-items: center; }
+.sc-brand-mark, .sc-brand-mark img { display: block; flex: none; width: 26px; height: 26px; object-fit: contain; }
+.sc-brand-head { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 0 6px; }
+.sc-brand-logo { display: block; max-width: 100%; }
+img.sc-brand-logo, .sc-brand-logo img { display: block; height: 46px; width: auto; max-width: 100%; object-fit: contain; }
+.sc-brand-tagline { color: var(--muted); font-size: 12.5px; }
 
 .sc-main { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 .sc-view { padding: 10px; display: flex; flex-direction: column; gap: 10px; max-width: 720px; margin: 0 auto; }
@@ -104,8 +118,10 @@
 .sc-iconbtn:focus-visible,
 .sc-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .sc-btn:disabled { opacity: 0.55; cursor: default; }
-.sc-btn.sc-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
-.sc-btn.sc-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.sc-btn.sc-primary { background: var(--primary); border-color: var(--primary); color: var(--primary-ink); font-weight: 600; }
+.sc-btn.sc-primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+.sc-btn.sc-cta { background: var(--cta); border-color: var(--cta); color: var(--cta-ink); }
+.sc-btn.sc-cta:hover { background: var(--cta-hover); border-color: var(--cta-hover); }
 .sc-btn.sc-danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); }
 .sc-btn.sc-danger:hover { background: var(--danger-soft); }
 .sc-btn.sc-ghost { border-color: transparent; background: transparent; color: var(--muted); }
@@ -359,6 +375,7 @@ textarea.sc-input { resize: vertical; min-height: 56px; line-height: 1.45; }
 .sc-row-top { display: flex; align-items: baseline; gap: 8px; }
 .sc-row-name { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sc-row-time { flex: none; font-size: 11.5px; color: var(--faint); }
+.sc-row-meta { margin-top: 1px; font-size: 12px; font-weight: 600; color: color-mix(in srgb, var(--accent) 70%, var(--text)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sc-row-bottom { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
 .sc-row-preview { flex: 1; min-width: 0; color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sc-due-dot { flex: none; display: inline-flex; align-items: center; gap: 3px; color: var(--danger); font-size: 11px; font-weight: 700; }
@@ -404,4 +421,151 @@ textarea.sc-input { resize: vertical; min-height: 56px; line-height: 1.45; }
   .sc-item { grid-template-columns: 1fr 34px; }
   .sc-topbar { height: 50px; }
   .sc-row { min-height: 66px; }
+}
+
+/* ============================================================================================
+   Theme: Globallink (official CI)
+   Forest #193E24 carries structure (top bar, focus, active states), Coral #DD633A marks the one
+   main action of a view, Ivory #F5F2E9 is the page, Sage #DEE8DC the quiet fill. Text is Sarabun,
+   loaded by the brand build (brand/fonts.css); without it the stack falls through to system fonts.
+   Measured contrast: ivory on forest 10.7:1, forest on sage 9.5:1, muted #566458 on ivory 5.6:1.
+   White on coral is only 3.6:1, so text on coral is forest-black #0B1A10 (5.1:1) and coral is
+   never used for small text on a light surface.
+   ============================================================================================ */
+html[data-theme="globallink"],
+html[data-theme="globallink"] body { background: #f5f2e9; }
+
+[data-theme="globallink"] .sc-root {
+  --bg: #f5f2e9;
+  --surface: #ffffff;
+  --surface-2: #f3f6f1;
+  --border: #dce3d8;
+  --border-strong: #bfcbbb;
+  --text: #17231a;
+  --muted: #566458;
+  --faint: #7e8b7f;
+  --accent: #193e24;
+  --accent-hover: #225232;
+  --accent-ink: #f5f2e9;
+  --accent-soft: #dee8dc;
+  --primary: #193e24;
+  --primary-hover: #225232;
+  --primary-ink: #f5f2e9;
+  --cta: #dd633a;
+  --cta-hover: #e67a55;
+  --cta-ink: #0b1a10;
+  --danger: #b3261e;
+  --danger-soft: #fbe9e6;
+  --warn: #8a5a00;
+  --warn-soft: #fbf1da;
+  --info: #193e24;
+  --info-soft: #dee8dc;
+  --shadow: 0 1px 2px rgba(25, 62, 36, 0.07);
+  --shadow-lg: 0 12px 32px rgba(18, 35, 24, 0.24);
+  --mix: #ffffff;
+  --topbar-logo: dark;
+  --chrome-color: #193e24;
+  color-scheme: light;
+  font-family: "Sarabun", system-ui, -apple-system, "Segoe UI", "Noto Sans Thai", "Thonburi", sans-serif;
+  font-size: 14.5px;
+}
+
+/* top bar: forest, with the ivory logo */
+[data-theme="globallink"] .sc-topbar { background: #193e24; border-bottom-color: #122e1a; color: #f5f2e9; }
+[data-theme="globallink"] .sc-topbar .sc-brand b { color: #f5f2e9; font-size: 15px; letter-spacing: 0; }
+[data-theme="globallink"] .sc-topbar .sc-brand span { color: #b9c9b8; }
+[data-theme="globallink"] .sc-topbar .sc-iconbtn { color: #dce7d9; }
+[data-theme="globallink"] .sc-topbar .sc-iconbtn:hover { background: rgba(245, 242, 233, 0.14); color: #ffffff; }
+[data-theme="globallink"] .sc-topbar .sc-iconbtn:focus-visible { outline-color: #f5f2e9; }
+[data-theme="globallink"] .sc-topbar .sc-badge { background: #f5f2e9; color: #193e24; }
+
+/* Thai has no capitals and reads worse letter-spaced */
+[data-theme="globallink"] .sc-sec-title { font-size: 12.5px; letter-spacing: 0; }
+[data-theme="globallink"] .sc-label { font-size: 12.5px; }
+[data-theme="globallink"] .sc-name { font-size: 16.5px; }
+
+/* chips: sage fill for quiet ones, a forest outline for the active one */
+[data-theme="globallink"] .sc-chip.sc-on { border-color: var(--accent); box-shadow: inset 0 0 0 0.5px var(--accent); }
+[data-theme="globallink"] .sc-chip.sc-interest { background: var(--accent-soft); color: var(--accent); }
+[data-theme="globallink"] .sc-tabs .sc-chip.sc-on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); box-shadow: none; }
+[data-theme="globallink"] .sc-tabs .sc-chip.sc-on .sc-count { opacity: 0.85; }
+[data-theme="globallink"] .sc-tabs .sc-chip.sc-due.sc-on { background: var(--danger); border-color: var(--danger); color: #ffffff; }
+[data-theme="globallink"] .sc-tabs .sc-chip.sc-due.sc-on .sc-badge { background: #ffffff; color: var(--danger); }
+
+[data-theme="globallink"] .sc-st-new { --c: #2b6485; }
+[data-theme="globallink"] .sc-st-interested { --c: #6a5596; }
+[data-theme="globallink"] .sc-st-quoted { --c: #8c6d0a; }
+[data-theme="globallink"] .sc-st-booked { --c: #1b7570; }
+[data-theme="globallink"] .sc-st-awaiting_payment { --c: #b5521e; }
+[data-theme="globallink"] .sc-st-paid { --c: #2f7a45; }
+[data-theme="globallink"] .sc-st-won { --c: #193e24; }
+[data-theme="globallink"] .sc-st-lost { --c: #707a70; }
+[data-theme="globallink"] .sc-st-spam { --c: #9b3535; }
+
+/* agent box: sage tint */
+[data-theme="globallink"] .sc-agent { background: color-mix(in srgb, var(--accent-soft) 55%, var(--surface)); border-color: color-mix(in srgb, var(--accent) 28%, var(--border)); }
+[data-theme="globallink"] .sc-agent .sc-sec-title { color: var(--accent); }
+[data-theme="globallink"] .sc-agent .sc-quote { background: var(--surface); }
+[data-theme="globallink"] .sc-kind-ai { background: var(--primary); color: var(--primary-ink); }
+[data-theme="globallink"] .sc-row-meta { color: var(--accent); }
+[data-theme="globallink"] .sc-skel { background: linear-gradient(90deg, #dee8dc 25%, #eef3ec 50%, #dee8dc 75%); background-size: 200% 100%; }
+[data-theme="globallink"] .sc-toast { background: #17231a; }
+[data-theme="globallink"] .sc-toast.sc-ok { background: #193e24; }
+[data-theme="globallink"] .sc-toast.sc-err { background: #b3261e; }
+[data-theme="globallink"] .sc-brand-tagline { color: var(--accent); font-weight: 500; }
+
+@media (pointer: coarse) {
+  [data-theme="globallink"] .sc-root { font-size: 15.5px; }
+}
+
+@media (prefers-color-scheme: dark) {
+  html[data-theme="globallink"],
+  html[data-theme="globallink"] body { background: #0c140f; }
+
+  [data-theme="globallink"] .sc-root {
+    --bg: #0c140f;
+    --surface: #131e17;
+    --surface-2: #1a281f;
+    --border: #27372b;
+    --border-strong: #374a3b;
+    --text: #f5f2e9;
+    --muted: #a3ae9f;
+    --faint: #76826f;
+    --accent: #9cc5a1;
+    --accent-hover: #b4d6b8;
+    --accent-ink: #0b1a10;
+    --accent-soft: #1c2e22;
+    --primary: #2c5a3a;
+    --primary-hover: #356b45;
+    --primary-ink: #f5f2e9;
+    --cta: #dd633a;
+    --cta-hover: #e67a55;
+    --cta-ink: #0b1a10;
+    --danger: #f0766a;
+    --danger-soft: #3a1b17;
+    --warn: #e8b45a;
+    --warn-soft: #33280f;
+    --info: #9cc5a1;
+    --info-soft: #1c2e22;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+    --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.6);
+    --mix: #000000;
+    color-scheme: dark;
+  }
+  [data-theme="globallink"] .sc-topbar { border-bottom-color: #0c140f; }
+  [data-theme="globallink"] .sc-st-new { --c: #7fb6d6; }
+  [data-theme="globallink"] .sc-st-interested { --c: #b5a1de; }
+  [data-theme="globallink"] .sc-st-quoted { --c: #d9b755; }
+  [data-theme="globallink"] .sc-st-booked { --c: #5cc7bf; }
+  [data-theme="globallink"] .sc-st-awaiting_payment { --c: #f0935f; }
+  [data-theme="globallink"] .sc-st-paid { --c: #74c98d; }
+  [data-theme="globallink"] .sc-st-won { --c: #a9d6ae; }
+  [data-theme="globallink"] .sc-st-lost { --c: #9ca69b; }
+  [data-theme="globallink"] .sc-st-spam { --c: #e58b8b; }
+  [data-theme="globallink"] .sc-agent { background: color-mix(in srgb, var(--accent-soft) 70%, var(--surface)); }
+  [data-theme="globallink"] .sc-skel { background: linear-gradient(90deg, #1c2e22 25%, #27372b 50%, #1c2e22 75%); background-size: 200% 100%; }
+  [data-theme="globallink"] .sc-toast { background: #27372b; }
+  [data-theme="globallink"] .sc-toast.sc-ok { background: #2c5a3a; }
+  [data-theme="globallink"] .sc-tabs .sc-chip.sc-due.sc-on { color: #0b1a10; }
+  [data-theme="globallink"] .sc-tabs .sc-chip.sc-due.sc-on .sc-badge { background: #0b1a10; color: var(--danger); }
 }

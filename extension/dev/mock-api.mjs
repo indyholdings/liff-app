@@ -2,6 +2,8 @@
 // Node built-ins only. In-memory. Implements the routes in docs/sidecar-contract.md.
 //
 //   node extension/dev/mock-api.mjs            → http://localhost:8790
+//   PROFILE=real_estate node extension/dev/mock-api.mjs   → Globallink Estate demo data
+//   ROOT=dist/globallink …                      → serve a branded build instead of the repo
 //   open http://localhost:8790/Ufakeoa/chat/U1001   (stand-in for chat.line.biz)
 //   open http://localhost:8790/staff.html           (mobile staff page)
 //   API URL http://localhost:8790 · staff token "demo-token" · admin key "demo-admin"
@@ -18,6 +20,62 @@ export const DEMO_ADMIN_KEY = 'demo-admin';
 export const DEMO_ID_TOKEN = 'demo-id-token';
 
 const STAGES = ['new', 'interested', 'quoted', 'awaiting_payment', 'paid', 'booked', 'won', 'lost', 'spam'];
+
+// ---------------------------------------------------------------- profiles (GET /api/config)
+const PROFILES = {
+  retail: {
+    profile: 'retail',
+    stages: [
+      { key: 'new', label: 'ใหม่' }, { key: 'interested', label: 'สนใจ' }, { key: 'quoted', label: 'เสนอราคาแล้ว' },
+      { key: 'awaiting_payment', label: 'รอโอน' }, { key: 'paid', label: 'ชำระแล้ว' }, { key: 'booked', label: 'จองคิวแล้ว' },
+      { key: 'won', label: 'ปิดการขาย' }, { key: 'lost', label: 'ยกเลิก' }, { key: 'spam', label: 'สแปม' },
+    ],
+    detail_fields: [],
+    media_categories: [
+      { key: 'slip', label: 'สลิป' }, { key: 'product', label: 'สินค้า' }, { key: 'before_after', label: 'ก่อน-หลัง' },
+      { key: 'document', label: 'เอกสาร' }, { key: 'other', label: 'อื่นๆ' },
+    ],
+    payment_methods: [
+      { key: 'transfer', label: 'โอนเงิน' }, { key: 'cod', label: 'เก็บเงินปลายทาง' }, { key: 'installment', label: 'ผ่อนชำระ' },
+    ],
+    labels: {
+      product: 'สินค้า', products: 'สินค้า', order: 'ออเดอร์', order_empty: 'ยังไม่มีออเดอร์',
+      product_search: 'ค้นหาสินค้าเพื่อเพิ่ม…', summary_button: 'ร่างข้อความสรุป',
+    },
+  },
+  real_estate: {
+    profile: 'real_estate',
+    stages: [
+      { key: 'new', label: 'ใหม่' }, { key: 'interested', label: 'รู้ความต้องการ' }, { key: 'quoted', label: 'ส่งทรัพย์แล้ว' },
+      { key: 'booked', label: 'นัดดูทรัพย์' }, { key: 'awaiting_payment', label: 'รอมัดจำ' }, { key: 'paid', label: 'วางมัดจำแล้ว' },
+      { key: 'won', label: 'ปิดดีล' }, { key: 'lost', label: 'หลุด' }, { key: 'spam', label: 'สแปม' },
+    ],
+    detail_fields: [
+      { key: 'role', label: 'บทบาท', type: 'select', options: [
+        { value: 'owner', label: 'เจ้าของทรัพย์' }, { value: 'buyer', label: 'ผู้ซื้อ' }, { value: 'tenant', label: 'ผู้เช่า' },
+        { value: 'co_agent', label: 'Co-agent' }, { value: 'resident', label: 'ลูกบ้าน' },
+      ] },
+      { key: 'intent', label: 'เรื่องที่ติดต่อ', type: 'select', options: [
+        { value: 'list_sale', label: 'ฝากขาย' }, { value: 'list_rent', label: 'ฝากเช่า' }, { value: 'buy', label: 'หาซื้อ' },
+        { value: 'rent', label: 'หาเช่า' }, { value: 'after_sales', label: 'แจ้งปัญหาหลังเช่า' }, { value: 'service', label: 'One Stop Service' },
+      ] },
+      { key: 'budget', label: 'งบประมาณ', type: 'text', placeholder: 'เช่น 12,000/เดือน' },
+      { key: 'location', label: 'ทำเล/โครงการ', type: 'text', placeholder: 'เช่น ใกล้ BTS / ชื่อโครงการ' },
+      { key: 'unit_type', label: 'ประเภทห้อง', type: 'text', placeholder: 'เช่น Studio / 1 ห้องนอน' },
+      { key: 'move_in', label: 'ต้องการย้ายเข้า', type: 'text', placeholder: 'เช่น ต้นเดือนหน้า' },
+      { key: 'property_code', label: 'รหัสทรัพย์', type: 'text', placeholder: 'เช่น RCD-0001' },
+    ],
+    media_categories: [
+      { key: 'slip', label: 'สลิป' }, { key: 'product', label: 'รูปทรัพย์' }, { key: 'before_after', label: 'สภาพห้อง' },
+      { key: 'document', label: 'เอกสาร' }, { key: 'other', label: 'อื่น ๆ' },
+    ],
+    payment_methods: [{ key: 'transfer', label: 'โอนเงิน' }],
+    labels: {
+      product: 'ทรัพย์', products: 'ทรัพย์', order: 'ข้อเสนอ/การจอง', order_empty: 'ยังไม่มีข้อเสนอ',
+      product_search: 'ค้นหาทรัพย์เพื่อเพิ่ม…', summary_button: 'ร่างข้อความสรุป',
+    },
+  },
+};
 const LOCKABLE = ['full_name', 'phone', 'address', 'postcode', 'stage'];
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
