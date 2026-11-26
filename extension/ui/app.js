@@ -772,8 +772,10 @@
           this.callLink = h('a', { class: 'sc-iconbtn', title: 'โทร', 'aria-label': 'โทรหาลูกค้า', hidden: true }, icon('phone'));
           control = h('div', { class: 'sc-phone-wrap' }, input, this.callLink);
         }
+        // Only a shop ships to the address; elsewhere it is simply where the customer can be reached.
+        const label = f.key === 'address' && CONFIG.profile !== 'retail' ? 'ที่อยู่ติดต่อ' : f.label;
         grid.append(h('div', { class: 'sc-field' + (f.wide ? ' sc-wide' : '') },
-          h('div', { class: 'sc-label' }, h('label', { for: 'sc-f-' + f.key }, f.label), lock, state),
+          h('div', { class: 'sc-label' }, h('label', { for: 'sc-f-' + f.key }, label), lock, state),
           control));
       }
       this.samePhoneBox = h('div', { hidden: true });
@@ -971,13 +973,18 @@
       const remDt = h('dt', null, 'คงเหลือชำระ');
       els.depRow = [depDt, els.deposit, remDt, els.remain];
       this.totalsEls = els;
+      const shipDt = h('dt', null, 'ค่าจัดส่ง');
+      if (!this.showShipping()) { shipDt.hidden = true; els.shipping.hidden = true; }
       return h('dl', { class: 'sc-totals' },
-        h('dt', null, 'ยอด' + L().product), els.subtotal,
+        h('dt', null, (CONFIG.profile === 'retail' ? 'ยอด' : 'ราคา') + L().product), els.subtotal,
         h('dt', null, 'ส่วนลด'), els.discount,
-        h('dt', null, 'ค่าจัดส่ง'), els.shipping,
+        shipDt, els.shipping,
         h('dt', { class: 'sc-grand' }, 'ยอดรวม'), els.total,
         depDt, els.deposit, remDt, els.remain);
     }
+
+    /** Delivery is a shop matter. Other profiles see the fee only if an order already carries one. */
+    showShipping() { return CONFIG.profile === 'retail' || num(this.draft.shipping_fee) > 0; }
 
     renderOrder() {
       const d = this.draft;
@@ -1068,6 +1075,18 @@
         : null;
       if (paySelect) paySelect.value = d.payment_method || '';
 
+      // Two fields to a row; with an odd count the last one takes the full width.
+      const moneyFields = [
+        field('ส่วนลด (บาท)', numInput('discount', 'order-discount')),
+        this.showShipping() ? field('ค่าจัดส่ง (บาท)', numInput('shipping_fee', 'order-shipping')) : null,
+        paySelect ? field('วิธีชำระ', paySelect) : null,
+        field('มัดจำ (บาท)', numInput('deposit_amount', 'order-deposit')),
+      ].filter(Boolean);
+      const moneyRows = [];
+      for (let i = 0; i < moneyFields.length; i += 2) {
+        moneyRows.push(i + 1 < moneyFields.length ? h('div', { class: 'sc-grid2' }, moneyFields[i], moneyFields[i + 1]) : moneyFields[i]);
+      }
+
       this.saveBtn = h('button', { type: 'button', class: 'sc-btn sc-primary', 'data-sc': 'order-save', onclick: () => this.saveOrder() }, 'บันทึก' + L().order);
       const statusRow = h('div', { class: 'sc-row-gap', 'data-sc': 'order-status-actions' });
       if (d.status !== 'awaiting_payment') {
@@ -1080,10 +1099,7 @@
         searchWrap,
         items,
         h('div', null, h('button', { type: 'button', class: 'sc-btn sc-small sc-ghost', 'data-sc': 'item-add', onclick: () => { d.items.push({ product_id: null, name: '', qty: 1, unit_price: 0 }); this.markDirty(); this.renderOrder(); const ins = this.secOrder.querySelectorAll('.sc-item input[type=text]'); if (ins.length) ins[ins.length - 1].focus(); } }, icon('plus'), 'เพิ่มรายการเอง')),
-        h('div', { class: 'sc-grid2' }, field('ส่วนลด (บาท)', numInput('discount', 'order-discount')), field('ค่าจัดส่ง (บาท)', numInput('shipping_fee', 'order-shipping'))),
-        paySelect
-          ? h('div', { class: 'sc-grid2' }, field('วิธีชำระ', paySelect), field('มัดจำ (บาท)', numInput('deposit_amount', 'order-deposit')))
-          : field('มัดจำ (บาท)', numInput('deposit_amount', 'order-deposit')),
+        ...moneyRows,
         field('หมายเหตุ' + L().order, h('input', { class: 'sc-input', type: 'text', value: d.note, placeholder: CONFIG.profile === 'retail' ? 'เช่น สี / ความจุ / นัดรับ' : 'เช่น เงื่อนไข / วันนัด', oninput: (e) => { d.note = e.target.value; this.markDirty(); } })),
         this.totalsBlock(),
         h('div', { class: 'sc-row-gap' }, this.saveBtn, h('button', { type: 'button', class: 'sc-btn', 'data-sc': 'summary', onclick: () => this.showSummary() }, L().summary_button)),

@@ -24,7 +24,8 @@
 // ---- tiny single-page chat console ----
 (function () {
   var OA = 'Ufakeoa';
-  var CHATS = [
+  // The mock server sets window.__FAKE_CHATS for profiles with other demo customers.
+  var CHATS = Array.isArray(window.__FAKE_CHATS) ? window.__FAKE_CHATS : [
     { id: 'U1001', name: 'Ploy 🌸', last: '[รูปภาพ]', msgs: [['in', 'ขอมัดจำก่อน 3000 ได้ไหมคะ เสาร์นี้ไปรับ'], ['out', 'ได้เลยค่ะ เดี๋ยวแอดมินสรุปยอดให้นะคะ'], ['in', '[ส่งรูปสลิป]']] },
     { id: 'U1002', name: 'Bank Thanakorn', last: 'iPhone 14 มีสีอะไรบ้างครับ', msgs: [['in', 'สวัสดีครับ'], ['in', 'iPhone 14 มีสีอะไรบ้างครับ']] },
     { id: 'U1003', name: 'มายด์', last: 'ขอคิดดูก่อนนะคะ', msgs: [['in', 'MacBook Air M2 ผ่อนได้กี่เดือนคะ'], ['in', 'ขอคิดดูก่อนนะคะ']] },

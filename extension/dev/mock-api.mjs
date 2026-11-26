@@ -80,7 +80,7 @@ const LOCKABLE = ['full_name', 'phone', 'address', 'postcode', 'stage'];
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml',
-  '.jpg': 'image/jpeg', '.ico': 'image/x-icon',
+  '.jpg': 'image/jpeg', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8',
 };
 
 // ---------------------------------------------------------------- demo media (inline SVG)
@@ -166,7 +166,7 @@ function seed() {
   const lead = (o) => {
     const l = Object.assign({
       id: id(), chat_id: null, display_name: null, picture_url: null, full_name: null, phone: null, address: null, postcode: null,
-      stage: 'new', tags: [], interests: [], assignee_id: null, ai_summary: null, next_action: null, suggested_reply: null,
+      stage: 'new', tags: [], interests: [], details: {}, assignee_id: null, ai_summary: null, next_action: null, suggested_reply: null,
       follow_up_at: null, locked_fields: [], last_message_at: ago(5), last_message_preview: null, created_at: ago(3000), updated_at: ago(5),
     }, o);
     db.leads.push(l);
@@ -229,6 +229,115 @@ function seed() {
   return db;
 }
 
+// ---------------------------------------------------------------- seed: property agency (PROFILE=real_estate)
+// Every person, phone number, unit number and price here is invented for the demo.
+function roomSvg({ wall, floor, label }) {
+  return svgUrl(`<svg xmlns='http://www.w3.org/2000/svg' width='400' height='400' viewBox='0 0 400 400'>
+<rect width='400' height='250' fill='${wall}'/><rect y='250' width='400' height='150' fill='${floor}'/>
+<rect x='40' y='50' width='130' height='120' rx='4' fill='#dcebf2' stroke='#ffffff' stroke-width='8'/><path d='M105 50v120M40 110h130' stroke='#ffffff' stroke-width='6'/>
+<rect x='210' y='170' width='160' height='70' rx='10' fill='#193e24'/><rect x='200' y='220' width='180' height='44' rx='10' fill='#2c5a3a'/>
+<rect x='226' y='186' width='56' height='34' rx='8' fill='#dee8dc'/><rect x='298' y='186' width='56' height='34' rx='8' fill='#dee8dc'/>
+<rect x='60' y='214' width='70' height='50' rx='4' fill='#b98a5a'/><circle cx='95' cy='196' r='18' fill='#dd633a'/>
+<rect x='20' y='352' width='360' height='32' rx='8' fill='rgba(16,20,26,.78)'/><text x='200' y='374' ${FONT} font-size='15' fill='#fff' text-anchor='middle'>${label}</text>
+</svg>`);
+}
+
+const REAL_ESTATE_CHATS = [
+  { id: 'U3001', name: 'Mint 🌿', last: '[รูปภาพ]', msgs: [['in', 'สนใจห้อง Studio ที่ Kave Town Colony ค่ะ งบไม่เกิน 12,000'], ['out', 'ได้เลยค่ะ เสาร์นี้สะดวกเข้ามาดูห้องไหมคะ'], ['in', 'เสาร์ 10:30 ได้ค่ะ']] },
+  { id: 'U3002', name: 'คุณวิภา', last: 'อยากฝากปล่อยเช่าค่ะ', msgs: [['in', 'มีห้องที่ Modiz บางโพ อยากฝากปล่อยเช่าค่ะ']] },
+  { id: 'U3003', name: 'Art Thanawat', last: 'ขอดูห้องอื่นเพิ่มครับ', msgs: [['in', 'หาคอนโด 1 ห้องนอน งบไม่เกิน 3 ล้านครับ'], ['in', 'ขอดูห้องอื่นเพิ่มครับ']] },
+  { id: 'U3004', name: 'ปอนด์ (Co-agent)', last: 'มีลูกค้าหาเช่า 2 ห้องนอนครับ', msgs: [['in', 'มีลูกค้าหาเช่า 2 ห้องนอนครับ']] },
+  { id: 'Cgbl7777', name: 'น้ำ Nam', last: 'ยังมีห้องว่างไหมคะ', msgs: [['in', 'ยังมีห้องว่างไหมคะ']] },
+  { id: 'Unobody', name: 'ลูกค้าเก่าก่อนติดตั้ง', last: '(แชทเก่า)', msgs: [['in', 'แชทนี้เกิดก่อนเชื่อมระบบ']] },
+];
+
+function seedRealEstate() {
+  const now = Date.now();
+  const ago = (min) => new Date(now - min * 60000).toISOString();
+  const ahead = (min) => new Date(now + min * 60000).toISOString();
+  let seq = 100;
+  const id = () => ++seq;
+  const db = {
+    staff: [
+      { id: 1, name: 'ฝน', role: 'admin', token: DEMO_TOKEN, line_user_id: null },
+      { id: 2, name: 'บีม', role: 'agent', token: 'demo-token-beam', line_user_id: null },
+    ],
+    settings: {
+      shop_name: 'Globallink Estate',
+      payment_instructions: 'โอนมัดจำตามบัญชีที่เจ้าหน้าที่แจ้ง แล้วส่งสลิปในแชทนี้ได้เลยค่ะ\nเจ้าหน้าที่จะตรวจยอดและยืนยันวันนัดทำสัญญาให้อีกครั้ง',
+    },
+    products: [
+      { id: 1, sku: 'RCD-0012', name: 'RCD-0012 · Kave Town Colony · Studio 23 ตร.ม. ชั้น 3 (เช่า/เดือน)', price: 11000, category: 'เช่า', active: true },
+      { id: 2, sku: 'RCD-0015', name: 'RCD-0015 · Kave Town Colony · Studio 23 ตร.ม. ชั้น 5 (เช่า/เดือน)', price: 12000, category: 'เช่า', active: true },
+      { id: 3, sku: 'RCD-0021', name: 'RCD-0021 · Modiz Collection Bangpho · 1 ห้องนอน 28 ตร.ม. ชั้น 11 (เช่า/เดือน)', price: 24000, category: 'เช่า', active: true },
+      { id: 4, sku: 'RCD-0007', name: 'RCD-0007 · North 8 Condo เชียงใหม่ · 2 ห้องนอน 73 ตร.ม. ชั้น 7 (เช่า/เดือน)', price: 35000, category: 'เช่า', active: true },
+      { id: 5, sku: 'SCD-0003', name: 'SCD-0003 · Sarin Place · 1 ห้องนอน 34 ตร.ม. ชั้น 12 (ขาย)', price: 2950000, category: 'ขาย', active: true },
+      { id: 6, sku: 'RCD-0009', name: 'RCD-0009 · Kave Town Colony · Studio 23 ตร.ม. ชั้น 2 (ปล่อยเช่าแล้ว)', price: 10500, category: 'เช่า', active: false },
+    ],
+    leads: [], notes: [], media: [], orders: [], messages: [], id,
+  };
+  const lead = (o) => {
+    const l = Object.assign({
+      id: id(), chat_id: null, display_name: null, picture_url: null, full_name: null, phone: null, address: null, postcode: null,
+      stage: 'new', tags: [], interests: [], details: {}, assignee_id: null, ai_summary: null, next_action: null, suggested_reply: null,
+      follow_up_at: null, locked_fields: [], last_message_at: ago(5), last_message_preview: null, created_at: ago(3000), updated_at: ago(5),
+    }, o);
+    db.leads.push(l);
+    return l;
+  };
+  const note = (lead_id, kind, body, min, author, pinned) => db.notes.push({ id: id(), lead_id, body, kind, author_name: author || (kind === 'ai' ? 'Sidecar Agent' : null), pinned: !!pinned, created_at: ago(min) });
+  const msg = (lead_id, direction, text, min, type) => db.messages.push({ id: id(), lead_id, direction, type: type || 'text', text: type && type !== 'text' ? null : text, media_id: null, sent_at: ago(min) });
+  const media = (lead_id, category, url, min, caption, slip) => db.media.push({ id: id(), lead_id, url, category, caption: caption || null, slip: slip || null, created_at: ago(min) });
+
+  // 1) someone looking to rent, viewing booked — the main demo chat
+  const mint = lead({
+    line_user_id: 'U3001', display_name: 'Mint 🌿', picture_url: avatarSvg('#2f7a45', 'M'),
+    full_name: 'มินตรา วงศ์ทดสอบ', phone: '0815550101', stage: 'booked', tags: ['QR ล็อบบี้'], interests: ['Kave Town Colony', 'Studio'], assignee_id: 1,
+    details: { role: 'tenant', intent: 'rent', budget: 'ไม่เกิน 12,000/เดือน', location: 'Kave Town Colony', unit_type: 'Studio', move_in: '1 ธ.ค.' },
+    locked_fields: ['details.move_in'],
+    ai_summary: 'นักศึกษาหาเช่าห้อง Studio ที่ Kave Town Colony งบไม่เกิน 12,000 บาท/เดือน ต้องการย้ายเข้า 1 ธ.ค. นัดดูห้องวันเสาร์ 10:30 น.',
+    next_action: 'ยืนยันนัดดูห้องวันเสาร์ และเตรียมรายการค่าใช้จ่ายวันเข้าอยู่ให้ลูกค้า',
+    suggested_reply: 'สวัสดีค่ะคุณมิ้นท์ ยืนยันนัดดูห้องที่ Kave Town Colony วันเสาร์ 10:30 น. นะคะ ส่วนค่าเช่าและค่าใช้จ่ายวันเข้าอยู่ เจ้าหน้าที่จะสรุปยืนยันให้อีกครั้งก่อนวันนัดค่ะ 🙏',
+    follow_up_at: ago(30), last_message_at: ago(6), last_message_preview: '[รูปภาพ]',
+  });
+  msg(mint.id, 'in', 'สวัสดีค่ะ สนใจห้อง Studio ที่ Kave Town Colony ค่ะ', 200);
+  msg(mint.id, 'in', 'งบไม่เกิน 12,000 ต่อเดือนค่ะ อยากย้ายเข้า 1 ธ.ค.', 198);
+  msg(mint.id, 'in', 'ชื่อ มินตรา วงศ์ทดสอบ เบอร์ 081-555-0101 ค่ะ', 150);
+  msg(mint.id, 'in', 'เสาร์ 10:30 ไปดูห้องได้ค่ะ', 60);
+  msg(mint.id, 'in', null, 6, 'image');
+  note(mint.id, 'ai', 'หาเช่า Studio ที่ Kave Town Colony งบไม่เกิน 12,000 บาท/เดือน ย้ายเข้า 1 ธ.ค. นัดดูห้องเสาร์ 10:30 น.', 58);
+  note(mint.id, 'staff', 'ลูกค้าเลี้ยงแมว 1 ตัว ต้องถามเจ้าของห้องก่อนว่าเลี้ยงสัตว์ได้ไหม', 50, 'ฝน', true);
+  note(mint.id, 'staff', 'กุญแจห้องชั้น 3 อยู่ที่นิติ แจ้งนิติล่วงหน้าแล้ว', 30, 'บีม');
+  media(mint.id, 'product', roomSvg({ wall: '#efe9dc', floor: '#c9a77c', label: 'Kave Town Colony · Studio ชั้น 3' }), 190, 'รูปห้องที่ลูกค้าสนใจ');
+  media(mint.id, 'product', roomSvg({ wall: '#e3ece6', floor: '#b7c4b0', label: 'Kave Town Colony · Studio ชั้น 5' }), 189, null);
+  media(mint.id, 'before_after', roomSvg({ wall: '#e9e4f0', floor: '#a9a1b8', label: 'สภาพห้องก่อนเข้าอยู่' }), 120, 'สภาพห้องล่าสุดจากเจ้าของ');
+  media(mint.id, 'document', docSvg('บัตรนักศึกษา (ตัวอย่าง)'), 6, 'เอกสารประกอบสัญญาเช่า');
+
+  // 2) the same phone number → "returning customer" notice
+  lead({ line_user_id: 'U3007', display_name: 'Mint (สัญญาเดิม)', full_name: 'มินตรา วงศ์ทดสอบ', phone: '0815550101', stage: 'won', details: { role: 'tenant', intent: 'rent', location: 'Sarin Place' }, last_message_at: ago(60 * 24 * 200), last_message_preview: 'ขอบคุณค่ะ คืนห้องเรียบร้อย', ai_summary: 'เคยเช่าห้องที่ Sarin Place ครบสัญญา คืนห้องเรียบร้อย' });
+
+  const wipa = lead({ line_user_id: 'U3002', display_name: 'คุณวิภา', picture_url: avatarSvg('#b5521e', 'ว'), full_name: 'วิภา ใจตัวอย่าง', phone: '0825550102', stage: 'interested', interests: ['Modiz Collection Bangpho'], details: { role: 'owner', intent: 'list_rent', location: 'Modiz Collection Bangpho', unit_type: '1 ห้องนอน 28 ตร.ม.', budget: 'อยากได้ 24,000/เดือน' }, last_message_at: ago(14), last_message_preview: 'อยากฝากปล่อยเช่าค่ะ', ai_summary: 'เจ้าของห้อง 1 ห้องนอนที่ Modiz Collection Bangpho ต้องการฝากปล่อยเช่า ตั้งราคาไว้ 24,000 บาท/เดือน', next_action: 'ขอรูปห้องและเอกสารกรรมสิทธิ์ แล้วนัดสำรวจห้อง', suggested_reply: 'ขอบคุณที่ไว้วางใจ Globallink ค่ะคุณวิภา รบกวนส่งรูปห้องปัจจุบันและแจ้งวันที่สะดวกให้เจ้าหน้าที่เข้าสำรวจห้องได้เลยค่ะ' });
+  msg(wipa.id, 'in', 'มีห้องที่ Modiz บางโพ อยากฝากปล่อยเช่าค่ะ', 14);
+
+  lead({ line_user_id: 'U3003', display_name: 'Art Thanawat', picture_url: avatarSvg('#2b6485', 'A'), full_name: 'ธนวัฒน์ ทดลอง', phone: '0835550103', stage: 'quoted', interests: ['1 ห้องนอน', 'ใกล้รถไฟฟ้า'], assignee_id: 2, details: { role: 'buyer', intent: 'buy', budget: 'ไม่เกิน 3 ล้าน', location: 'รัชดา-ลาดพร้าว', unit_type: '1 ห้องนอน' }, last_message_at: ago(60 * 20), last_message_preview: 'ขอดูห้องอื่นเพิ่มครับ', ai_summary: 'หาซื้อคอนโด 1 ห้องนอนย่านรัชดา-ลาดพร้าว งบไม่เกิน 3 ล้าน ส่งทรัพย์ไปแล้ว 1 รายการ ขอดูตัวเลือกเพิ่ม', next_action: 'ส่งทรัพย์ที่ตรงงบเพิ่ม 2 รายการ และถามวันที่สะดวกนัดดู', follow_up_at: ago(60 * 2) });
+  lead({ line_user_id: 'U3004', display_name: 'ปอนด์ (Co-agent)', full_name: null, phone: '0845550104', stage: 'new', details: { role: 'co_agent', intent: 'rent', budget: '35,000/เดือน', location: 'เชียงใหม่ นิมมาน', unit_type: '2 ห้องนอน' }, last_message_at: ago(2), last_message_preview: 'มีลูกค้าหาเช่า 2 ห้องนอนครับ', ai_summary: 'Co-agent มีลูกค้าหาเช่า 2 ห้องนอนที่เชียงใหม่ งบ 35,000 บาท/เดือน', next_action: 'ตรวจห้องว่างที่ North 8 Condo และแจ้งเงื่อนไข Co-agent' });
+  const aew = lead({ line_user_id: 'U3005', display_name: 'ป้าแอ๋ว', picture_url: avatarSvg('#6a5596', 'ป'), full_name: 'อรทัย สมมติ', phone: '0855550105', stage: 'interested', assignee_id: 1, details: { role: 'resident', intent: 'after_sales', location: 'North 8 Condo เชียงใหม่', property_code: 'RCD-0007' }, last_message_at: ago(95), last_message_preview: 'แอร์น้ำหยดค่ะ', ai_summary: 'ลูกบ้านแจ้งแอร์ห้องนอนน้ำหยด ขอช่างเข้าตรวจ สะดวกช่วงบ่ายวันธรรมดา', next_action: 'ถามนิติเรื่องช่างประจำอาคาร แล้วแจ้งวันเข้าตรวจให้ลูกบ้าน', follow_up_at: ahead(120) });
+  media(aew.id, 'before_after', roomSvg({ wall: '#dfe7ee', floor: '#9fb0bf', label: 'แอร์ห้องนอน — จุดที่น้ำหยด' }), 95, 'รูปที่ลูกบ้านส่งมา');
+
+  const beam = lead({ line_user_id: 'U3006', display_name: 'Beam', picture_url: avatarSvg('#1b7570', 'B'), full_name: 'พีรพล นามสมมุติ', phone: '0865550106', stage: 'paid', assignee_id: 2, details: { role: 'tenant', intent: 'rent', budget: '25,000/เดือน', location: 'Modiz Collection Bangpho', unit_type: '1 ห้องนอน', move_in: '15 ธ.ค.', property_code: 'RCD-0021' }, last_message_at: ago(60 * 5), last_message_preview: 'โอนมัดจำแล้วครับ', ai_summary: 'ตกลงเช่า RCD-0021 โอนมัดจำ 5,000 บาทแล้ว รอนัดวันทำสัญญา', next_action: 'นัดวันทำสัญญาเช่าและส่งรายการเอกสารที่ต้องเตรียม' });
+  media(beam.id, 'slip', slipSvg({ amount: '5,000.00', bank: 'ธนาคารตัวอย่าง', time: 'วันนี้ 09:12 น.', ref: '0000 5550 0106 XY', to: 'บัญชีรับมัดจำ (ตัวอย่าง)' }), 60 * 5, 'สลิปมัดจำ', { amount: 5000, paid_at: ago(60 * 5 + 3), bank: 'ธนาคารตัวอย่าง', ref: '000055500106XY', matches_order: true });
+  db.orders.push({ id: id(), lead_id: beam.id, status: 'paid', items: [{ id: id(), product_id: 3, name: db.products[2].name, qty: 1, unit_price: 24000 }], discount: 0, shipping_fee: 0, payment_method: 'transfer', deposit_amount: 5000, note: 'สัญญา 12 เดือน', created_at: ago(60 * 6), updated_at: ago(60 * 5), staff_edited: true });
+
+  lead({ line_user_id: 'U3008', display_name: 'Ton', stage: 'lost', details: { role: 'tenant', intent: 'rent' }, last_message_at: ago(60 * 24 * 6), last_message_preview: 'ได้ห้องที่อื่นแล้วครับ', ai_summary: 'ได้ห้องจากที่อื่นแล้ว' });
+  lead({ line_user_id: 'U3009', display_name: 'รับยิงแอด เพิ่มยอดขาย', stage: 'spam', last_message_at: ago(60 * 24 * 2), last_message_preview: 'สนใจทำการตลาดออนไลน์ไหมคะ' });
+
+  // A customer whose OA Manager chat id differs from the Messaging API user id → link by hand.
+  const nam = lead({ line_user_id: 'U4001', display_name: 'น้ำ Nam', picture_url: avatarSvg('#8c6d0a', 'น'), phone: '0875550107', stage: 'new', details: { intent: 'rent' }, last_message_at: ago(20), last_message_preview: 'ยังมีห้องว่างไหมคะ', ai_summary: 'ถามหาห้องว่าง ยังไม่ระบุงบและทำเล', next_action: 'ถามงบ ทำเล และวันที่ต้องการย้ายเข้า' });
+  msg(nam.id, 'in', 'ยังมีห้องว่างไหมคะ', 20);
+
+  return db;
+}
+
 // ---------------------------------------------------------------- helpers
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const normPhone = (p) => {
@@ -246,8 +355,11 @@ class HttpError extends Error {
 const bad = (m) => new HttpError(400, 'bad_request', m);
 const notFound = (m) => new HttpError(404, 'not_found', m || 'not found');
 
-export function createMockApp() {
-  const db = seed();
+export function createMockApp(opts = {}) {
+  const profile = opts.profile === 'real_estate' ? 'real_estate' : 'retail';
+  const config = PROFILES[profile];
+  const db = profile === 'real_estate' ? seedRealEstate() : seed();
+  const staticRoot = opts.root ? path.resolve(opts.root) : REPO_ROOT;
   const now = () => new Date().toISOString();
 
   const viewLead = (l) => {
@@ -306,6 +418,20 @@ export function createMockApp() {
   function summaryText(l) {
     const o = viewOrder(bundleOrder(l.id));
     if (!o) throw bad('lead has no order');
+    if (profile === 'real_estate') {
+      const out = ['สรุปข้อเสนอ — ' + db.settings.shop_name, '', 'คุณ ' + (l.full_name || l.display_name || 'ลูกค้า')];
+      if (l.phone) out.push('เบอร์ ' + l.phone);
+      out.push('', 'ทรัพย์');
+      o.items.forEach((it, i) => out.push(`${i + 1}. ${it.name} = ${money(it.qty * it.unit_price)} บาท`));
+      out.push('', 'ราคารวม ' + money(o.total) + ' บาท');
+      if (o.deposit_amount) {
+        out.push('มัดจำ ' + money(o.deposit_amount) + ' บาท');
+        out.push('คงเหลือ ' + money(o.total - o.deposit_amount) + ' บาท');
+      }
+      if (o.note) out.push('หมายเหตุ: ' + o.note);
+      if (db.settings.payment_instructions) out.push('', db.settings.payment_instructions);
+      return out.join('\n');
+    }
     const lines = ['สรุปรายการสั่งซื้อ — ' + db.settings.shop_name, ''];
     lines.push('คุณ ' + (l.full_name || l.display_name || 'ลูกค้า'));
     if (l.phone) lines.push('เบอร์ ' + l.phone);
@@ -345,6 +471,7 @@ export function createMockApp() {
     let m;
 
     if (method === 'GET' && p === '/api/me') return { ok: true, staff: staffView(me) };
+    if (method === 'GET' && p === '/api/config') return { ok: true, config };
     if (method === 'GET' && p === '/api/staff') return { ok: true, staff: db.staff.map(staffView) };
 
     if (method === 'POST' && p === '/api/staff/link-line') {
@@ -386,6 +513,23 @@ export function createMockApp() {
       if (method === 'PATCH') {
         const allowed = ['full_name', 'phone', 'address', 'postcode', 'stage', 'tags', 'interests', 'assignee_id', 'follow_up_at'];
         if (Array.isArray(body.unlock)) l.locked_fields = l.locked_fields.filter((f) => !body.unlock.includes(f));
+        if (body.details !== undefined) {
+          if (!body.details || typeof body.details !== 'object' || Array.isArray(body.details)) throw bad('details must be an object');
+          for (const key of Object.keys(body.details)) {
+            const field = config.detail_fields.find((f) => f.key === key);
+            if (!field) throw bad('unknown detail: ' + key);
+            const v = body.details[key] == null ? '' : String(body.details[key]).trim();
+            if (v && field.type === 'select' && !field.options.some((o) => o.value === v)) throw bad('unknown value for ' + key);
+            const lockKey = 'details.' + key;
+            if (v) {
+              l.details[key] = v;
+              if (!l.locked_fields.includes(lockKey)) l.locked_fields.push(lockKey);
+            } else {
+              delete l.details[key];
+              l.locked_fields = l.locked_fields.filter((f) => f !== lockKey);
+            }
+          }
+        }
         for (const k of Object.keys(body)) {
           if (!allowed.includes(k)) continue;
           let v = body[k];
@@ -536,9 +680,13 @@ export function createMockApp() {
   function serveStatic(pathname, res) {
     if (pathname === '/favicon.ico') { res.writeHead(204); res.end(); return; }
     // Anything shaped like an OA Manager chat URL gets the stand-in page.
-    let rel = /^\/U[^/]*(\/chat(\/[^/]*)?)?\/?$/.test(pathname) || pathname === '/' ? 'extension/dev/fake-chat.html' : decodeURIComponent(pathname).replace(/^\/+/, '');
-    const file = path.resolve(REPO_ROOT, rel);
-    const inside = file === REPO_ROOT || file.startsWith(REPO_ROOT + path.sep);
+    const isChatPage = /^\/U[^/]*(\/chat(\/[^/]*)?)?\/?$/.test(pathname) || pathname === '/';
+    let rel = isChatPage ? 'extension/dev/fake-chat.html' : decodeURIComponent(pathname).replace(/^\/+/, '');
+    // Files come from the static root (the repo, or a branded build). The dev stand-in pages are
+    // not part of a build, so those always come from the repo.
+    const base = rel.startsWith('extension/dev/') ? REPO_ROOT : staticRoot;
+    const file = path.resolve(base, rel);
+    const inside = file === base || file.startsWith(base + path.sep);
     const hidden = rel.split('/').some((seg) => seg.startsWith('.') || seg === 'node_modules');
     if (!inside || hidden || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
@@ -546,6 +694,12 @@ export function createMockApp() {
       return;
     }
     res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-store' });
+    if (isChatPage && profile === 'real_estate') {
+      // The stand-in chat list has to name this profile's demo customers.
+      const chats = '<script>window.__FAKE_CHATS = ' + JSON.stringify(REAL_ESTATE_CHATS).replace(/</g, '\\u003c') + ';</script>\n';
+      res.end(fs.readFileSync(file, 'utf8').replace('<script src="/extension/dev/fake-chat.js"></script>', chats + '<script src="/extension/dev/fake-chat.js"></script>'));
+      return;
+    }
     fs.createReadStream(file).pipe(res);
   }
 
@@ -578,8 +732,8 @@ export function createMockApp() {
   return { handle, db };
 }
 
-export function startMockServer(port = 0) {
-  const app = createMockApp();
+export function startMockServer(port = 0, opts = {}) {
+  const app = createMockApp(opts);
   const server = http.createServer((req, res) => { app.handle(req, res); });
   return new Promise((resolve) => {
     server.listen(port, () => {
@@ -590,9 +744,10 @@ export function startMockServer(port = 0) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const { url } = await startMockServer(Number(process.env.PORT) || 8790);
-  console.log('Sidecar mock running');
-  console.log('  fake LINE OA chat : ' + url + '/Ufakeoa/chat/U1001');
+  const profile = process.env.PROFILE === 'real_estate' ? 'real_estate' : 'retail';
+  const { url } = await startMockServer(Number(process.env.PORT) || 8790, { profile, root: process.env.ROOT || undefined });
+  console.log('Sidecar mock running (profile: ' + profile + (process.env.ROOT ? ', root: ' + process.env.ROOT : '') + ')');
+  console.log('  fake LINE OA chat : ' + url + '/Ufakeoa/chat/' + (profile === 'real_estate' ? 'U3001' : 'U1001'));
   console.log('  mobile staff page : ' + url + '/staff.html');
   console.log('  API URL           : ' + url + '   token: ' + DEMO_TOKEN);
 }

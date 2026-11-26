@@ -8,7 +8,10 @@
     "dev": "node dev/server.ts",
     "dev:gbl": "PROFILE=real_estate PORT=8788 node dev/server.ts",
     "test:ui": "node extension/dev/smoke.mjs",
-    "test:e2e": "node dev/e2e.mjs"
+    "test:e2e": "node dev/e2e.mjs",
+    "test:ui:gbl": "node extension/dev/smoke-gbl.mjs",
+    "test:e2e:gbl": "node dev/e2e-gbl.mjs",
+    "build:brand": "node scripts/build-brand.mjs"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.6.0",
