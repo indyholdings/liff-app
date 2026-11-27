@@ -30,14 +30,15 @@ npm run build:brand globallink
 และ `dist/globallink/staff.html` พร้อมไฟล์ประกอบ สำหรับวางบน hosting ของ Globallink
 โลโก้และสีมาจาก `brands/globallink/` ซึ่งคัดลอกจาก Globallink OS / GL CI
 
-## Deploy (ยังไม่ได้ทำ)
+## Deploy
 
-ต้องมีก่อน: Supabase project ของ Globallink เอง (ไม่ใช้ `jaifu-one`) และ LINE OA ที่จะใช้จริง
+Supabase project `gbl-connect` (ref `chhjzarnfmripqvhoclm`) แยกจาก JAIFU · แผนผังทุก project อยู่ใน [supabase-map.md](supabase-map.md)
 
-1. Apply migration ทั้งหมดใน `supabase/migrations/` ตามลำดับ
-2. Deploy function `sidecar` (ไฟล์ใน `supabase/functions/sidecar/`, ปิด verify JWT)
-3. ตั้ง secret ตาม [sidecar-setup.md](sidecar-setup.md) และเพิ่ม `SIDECAR_PROFILE=real_estate`
-4. ทำขั้นตอน LINE, token พนักงาน และตั้งค่าร้าน ตามคู่มือเดียวกัน โดยใช้ UI จาก `dist/globallink/`
+- [x] Apply migration ทั้งหมดใน `supabase/migrations/` แล้ว
+- [x] Deploy function `sidecar` v0.2 (ปิด verify JWT) แล้ว: `https://chhjzarnfmripqvhoclm.supabase.co/functions/v1/sidecar`
+- [x] ตั้งค่าร้าน: shop_name "Globallink Estate" และข้อความแจ้งโอนมัดจำ
+- [ ] ตั้ง secret ตาม [sidecar-setup.md](sidecar-setup.md) และเพิ่ม `SIDECAR_PROFILE=real_estate`
+- [ ] ตั้ง Webhook ของ OA `@fuk5121a` เป็น `<API>/webhook`, ออก token พนักงาน, ใช้ UI จาก `dist/globallink/`
 
 ## ใช้ร่วมกับบอทหลังการขายและ GBL Connect
 

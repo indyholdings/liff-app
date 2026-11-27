@@ -5,7 +5,9 @@ Sidecar ทำงานคู่กับ LINE OA: แอดมินตอบ�
 แล้วแสดงใน panel ข้างแชท (Chrome extension) และหน้ามือถือ (`staff.html`)
 
 - API: `https://ihbmufkwqgxzpyoepajz.supabase.co/functions/v1/sidecar`
-- ข้อมูลอยู่ใน Supabase project `jaifu-one` schema `sidecar` (แยกจากตารางเดิมทั้งหมด)
+- ข้อมูลอยู่ใน Supabase project `jaifu-one` (ref `ihbmufkwqgxzpyoepajz`) schema `sidecar` (แยกจากตารางเดิมทั้งหมด)
+  project นี้ใช้ร่วมกับ JAIFU ONE, Hidden และ BaanNu ดู [supabase-map.md](supabase-map.md)
+- Deploy v0.2 แล้ว (27 พ.ย. 2026): migration `sidecar_details` และ function `sidecar` version 2
 - รายละเอียด route และโครงสร้างข้อมูล: [sidecar-contract.md](sidecar-contract.md)
 
 ## 1. ใส่ secret (ครั้งเดียว)
